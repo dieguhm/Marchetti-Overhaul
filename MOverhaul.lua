@@ -229,11 +229,15 @@ local function UpdateMapQuestLine()
     local endX = pinX * w
     local endY = pinY * h
 
-    MOverhaul_MapQuestLine:ClearAnchors()
-    MOverhaul_MapQuestLine:SetAnchor(TOPLEFT, ZO_WorldMapContainer, TOPLEFT, 0, 0)
-    MOverhaul_MapQuestLine:SetStartPoint(startX, startY)
-    MOverhaul_MapQuestLine:SetEndPoint(endX, endY)
-    MOverhaul_MapQuestLine:SetHidden(false)
+    if MOverhaul_MapQuestLine.SetStartPoint and MOverhaul_MapQuestLine.SetEndPoint then
+        MOverhaul_MapQuestLine:ClearAnchors()
+        MOverhaul_MapQuestLine:SetAnchor(TOPLEFT, ZO_WorldMapContainer, TOPLEFT, 0, 0)
+        MOverhaul_MapQuestLine:SetStartPoint(startX, startY)
+        MOverhaul_MapQuestLine:SetEndPoint(endX, endY)
+        MOverhaul_MapQuestLine:SetHidden(false)
+    else
+        MOverhaul_MapQuestLine:SetHidden(true)
+    end
 end
 
 local function GetQuality(bagId, slotIndex)
