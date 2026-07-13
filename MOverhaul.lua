@@ -541,34 +541,70 @@ local function OnAddOnLoaded(event, addonName)
 end
 
 SLASH_COMMANDS["/mo_debugmap"] = function()
-    d("[MOverhaul] Lib3D loaded: " .. tostring(Lib3D ~= nil))
-    d("[MOverhaul] Lib3DArrow loaded: " .. tostring(Lib3DArrow ~= nil))
+    local playerX, playerY = GetMapPlayerPosition("player")
+    d("[MOverhaul] Player Pos: " .. tostring(playerX) .. ", " .. tostring(playerY))
 
-    if not CT_LINE then
-        d("[MOverhaul] CT_LINE is nil!")
+    local pinManager = ZO_WorldMap_GetPinManager()
+    if not pinManager then
+        d("[MOverhaul] Pin Manager is nil!")
         return
     end
 
-    local testLine = WINDOW_MANAGER:CreateControl("MOverhaul_TestLine", GuiRoot, CT_LINE)
-    if not testLine then
-        d("[MOverhaul] Failed to create CT_LINE control!")
+    local activePins = nil
+    if pinManager.GetActiveObjects then
+        activePins = pinManager:GetActiveObjects()
+    elseif pinManager.m_Active then
+        activePins = pinManager.m_Active
+    end
+
+    if not activePins then
+        d("[MOverhaul] Active Pins table is nil!")
         return
     end
 
-    d("[MOverhaul] CT_LINE control created successfully")
+    local count = 0
+    for k, v in pairs(activePins) do
+        count = count + 1
+    end
+    d("[MOverhaul] Active Pins Count: " .. count)
 
-    local mt = getmetatable(testLine)
-    if mt and mt.__index then
-        local methods = {}
-        for k, v in pairs(mt.__index) do
-            if type(v) == "function" then
-                table.insert(methods, tostring(k))
+    local targetPin = nil
+    for pinKey, pin in pairs(activePins) do
+        if type(pin) == "table" or type(pin) == "userdata" then
+            if pin.GetPinType then
+                local pinType = pin:GetPinType()
+                if pinType == MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION or pinType == MAP_PIN_TYPE_ASSISTED_QUEST_ENDING then
+                    targetPin = pin
+                    d("[MOverhaul] Found assisted quest pin of type: " .. tostring(pinType))
+                    break
+                elseif pinType == MAP_PIN_TYPE_QUEST_CONDITION or pinType == MAP_PIN_TYPE_QUEST_ENDING then
+                    if not targetPin then
+                        targetPin = pin
+                        d("[MOverhaul] Found quest pin of type: " .. tostring(pinType))
+                    end
+                end
             end
         end
-        d("[MOverhaul] Line Methods: " .. table.concat(methods, ", "))
-    else
-        d("[MOverhaul] Line metatable.__index is nil!")
     end
+
+    if not targetPin then
+        d("[MOverhaul] No Quest Pin found in active pins!")
+        return
+    end
+
+    local pinX, pinY = targetPin:GetNormalizedPosition()
+    d("[MOverhaul] Target Pin Pos: " .. tostring(pinX) .. ", " .. tostring(pinY))
+
+    local w, h = ZO_WorldMapContainer:GetDimensions()
+    d("[MOverhaul] Container Size: " .. tostring(w) .. "x" .. tostring(h))
+
+    local startX = playerX * w
+    local startY = playerY * h
+    local endX = pinX * w
+    local endY = pinY * h
+    d("[MOverhaul] Line Points: Start(" .. tostring(startX) .. ", " .. tostring(startY) .. ") -> End(" .. tostring(endX) .. ", " .. tostring(endY) .. ")")
+    d("[MOverhaul] Lib3D loaded: " .. tostring(Lib3D ~= nil))
+    d("[MOverhaul] Lib3DArrow loaded: " .. tostring(Lib3DArrow ~= nil))
 end
 
 EVENT_MANAGER:RegisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED, OnAddOnLoaded)
