@@ -251,11 +251,10 @@ local function UpdateMapQuestLine()
     local endX = pinX * w
     local endY = pinY * h
 
-    if MOverhaul_MapQuestLine.SetStartPoint and MOverhaul_MapQuestLine.SetEndPoint then
+    if MOverhaul_MapQuestLine.SetThickness then
         MOverhaul_MapQuestLine:ClearAnchors()
-        MOverhaul_MapQuestLine:SetAnchor(TOPLEFT, ZO_WorldMapContainer, TOPLEFT, 0, 0)
-        MOverhaul_MapQuestLine:SetStartPoint(startX, startY)
-        MOverhaul_MapQuestLine:SetEndPoint(endX, endY)
+        MOverhaul_MapQuestLine:SetAnchor(TOPLEFT, ZO_WorldMapContainer, TOPLEFT, startX, startY)
+        MOverhaul_MapQuestLine:SetAnchor(BOTTOMRIGHT, ZO_WorldMapContainer, TOPLEFT, endX, endY)
         MOverhaul_MapQuestLine:SetHidden(false)
     else
         MOverhaul_MapQuestLine:SetHidden(true)
