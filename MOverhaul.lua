@@ -490,57 +490,58 @@ local function OnAddOnLoaded(event, addonName)
 end
 
 SLASH_COMMANDS["/mo_debugmap"] = function()
-    local playerX, playerY = GetMapPlayerPosition("player")
-    d("[MOverhaul] Player Pos: " .. tostring(playerX) .. ", " .. tostring(playerY))
-
     local pinManager = ZO_WorldMap_GetPinManager()
     if not pinManager then
         d("[MOverhaul] Pin Manager is nil!")
         return
     end
 
-    if not pinManager.m_pins then
-        d("[MOverhaul] pinManager.m_pins is nil!")
-        return
+    local keys = {}
+    for k, v in pairs(pinManager) do
+        table.insert(keys, tostring(k))
     end
+    d("[MOverhaul] pinManager keys: " .. table.concat(keys, ", "))
 
-    local count = 0
-    for k, v in pairs(pinManager.m_pins) do
-        count = count + 1
-    end
-    d("[MOverhaul] Total Pins: " .. count)
-
-    local targetPin = nil
-    for pinKey, pin in pairs(pinManager.m_pins) do
-        local pinType = pin:GetPinType()
-        if pinType == MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION or pinType == MAP_PIN_TYPE_ASSISTED_QUEST_ENDING then
-            targetPin = pin
-            d("[MOverhaul] Found assisted quest pin of type: " .. tostring(pinType))
-            break
-        elseif pinType == MAP_PIN_TYPE_QUEST_CONDITION or pinType == MAP_PIN_TYPE_QUEST_ENDING then
-            if not targetPin then
-                targetPin = pin
-                d("[MOverhaul] Found quest pin of type: " .. tostring(pinType))
-            end
+    local mt = getmetatable(pinManager)
+    if mt and mt.__index then
+        local mtKeys = {}
+        for k, v in pairs(mt.__index) do
+            table.insert(mtKeys, tostring(k))
         end
+        d("[MOverhaul] pinManager MT methods: " .. table.concat(mtKeys, ", "))
+    elseif mt then
+        local mtKeys = {}
+        for k, v in pairs(mt) do
+            table.insert(mtKeys, tostring(k))
+        end
+        d("[MOverhaul] pinManager MT keys: " .. table.concat(mtKeys, ", "))
     end
 
-    if not targetPin then
-        d("[MOverhaul] No Quest Pin found!")
-        return
+    -- Let's check some guesses
+    if pinManager.m_Active then
+        local count = 0
+        for k, v in pairs(pinManager.m_Active) do
+            count = count + 1
+        end
+        d("[MOverhaul] pinManager.m_Active has " .. count .. " items")
+    else
+        d("[MOverhaul] pinManager.m_Active is nil!")
     end
 
-    local pinX, pinY = targetPin:GetNormalizedPosition()
-    d("[MOverhaul] Target Pin Pos: " .. tostring(pinX) .. ", " .. tostring(pinY))
-
-    local w, h = ZO_WorldMapContainer:GetDimensions()
-    d("[MOverhaul] Container Size: " .. tostring(w) .. "x" .. tostring(h))
-
-    local startX = playerX * w
-    local startY = playerY * h
-    local endX = pinX * w
-    local endY = pinY * h
-    d("[MOverhaul] Line Points: Start(" .. tostring(startX) .. ", " .. tostring(startY) .. ") -> End(" .. tostring(endX) .. ", " .. tostring(endY) .. ")")
+    if pinManager.GetActiveObjects then
+        local active = pinManager:GetActiveObjects()
+        if active then
+            local count = 0
+            for k, v in pairs(active) do
+                count = count + 1
+            end
+            d("[MOverhaul] pinManager:GetActiveObjects() has " .. count .. " items")
+        else
+            d("[MOverhaul] pinManager:GetActiveObjects() returned nil")
+        end
+    else
+        d("[MOverhaul] pinManager:GetActiveObjects is nil!")
+    end
 end
 
 EVENT_MANAGER:RegisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED, OnAddOnLoaded)
