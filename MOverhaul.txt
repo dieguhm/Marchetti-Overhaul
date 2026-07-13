@@ -1,0 +1,9 @@
+## Title: M Overhaul
+## APIVersion: 101048 101049 101050 101051
+## Version: 1.0.0
+## Author: Marchetti
+## Description: Addon principal M Overhaul com modulo Gear Lockout.
+## DependsOn: LibAddonMenu-2.0
+## SavedVariables: MOverhaul_SavedVariables
+
+MOverhaul.lua
