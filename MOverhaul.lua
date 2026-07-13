@@ -542,6 +542,9 @@ local function OnAddOnLoaded(event, addonName)
 end
 
 SLASH_COMMANDS["/mo_debugmap"] = function()
+    d("[MOverhaul] Lib3D loaded: " .. tostring(Lib3D ~= nil))
+    d("[MOverhaul] Lib3DArrow loaded: " .. tostring(Lib3DArrow ~= nil))
+
     if not CT_LINE then
         d("[MOverhaul] CT_LINE is nil!")
         return
