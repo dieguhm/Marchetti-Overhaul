@@ -5,6 +5,7 @@ MOverhaul.isConfirmed = false
 local defaults = {
     gearLockoutEnabled = true,
     overloadIndicatorEnabled = true,
+    questMapLineEnabled = true,
 }
 
 local overloadLabel = nil
@@ -137,6 +138,89 @@ function MOverhaul.UpdateOverloadState()
         overloadLabel:SetText("OFF")
         overloadLabel:SetColor(1, 0, 0, 1) -- Red
     end
+end
+
+local MOverhaul_MapQuestLine = nil
+local lastMapUpdate = 0
+local MAP_UPDATE_INTERVAL = 0.05 -- Update 20 times per second
+
+local function UpdateMapQuestLine()
+    if not MOverhaul.db or not MOverhaul.db.questMapLineEnabled then
+        if MOverhaul_MapQuestLine then
+            MOverhaul_MapQuestLine:SetHidden(true)
+        end
+        return
+    end
+
+    local time = GetFrameTimeSeconds()
+    if time - lastMapUpdate < MAP_UPDATE_INTERVAL then return end
+    lastMapUpdate = time
+
+    if not ZO_WorldMap or ZO_WorldMap:IsHidden() then
+        if MOverhaul_MapQuestLine then
+            MOverhaul_MapQuestLine:SetHidden(true)
+        end
+        return
+    end
+
+    local playerX, playerY = GetMapPlayerPosition("player")
+    if not playerX or playerX == 0 then
+        if MOverhaul_MapQuestLine then
+            MOverhaul_MapQuestLine:SetHidden(true)
+        end
+        return
+    end
+
+    local pinManager = ZO_WorldMap_GetPinManager()
+    if not pinManager or not pinManager.m_pins then return end
+
+    local targetPin = nil
+    for pinKey, pin in pairs(pinManager.m_pins) do
+        local pinType = pin:GetPinType()
+        -- Prioritize assisted quest pins
+        if pinType == MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION or pinType == MAP_PIN_TYPE_ASSISTED_QUEST_ENDING then
+            targetPin = pin
+            break
+        elseif pinType == MAP_PIN_TYPE_QUEST_CONDITION or pinType == MAP_PIN_TYPE_QUEST_ENDING then
+            if not targetPin then
+                targetPin = pin
+            end
+        end
+    end
+
+    if not targetPin then
+        if MOverhaul_MapQuestLine then
+            MOverhaul_MapQuestLine:SetHidden(true)
+        end
+        return
+    end
+
+    local pinX, pinY = targetPin:GetNormalizedPosition()
+    if not pinX or pinX == 0 then
+        if MOverhaul_MapQuestLine then
+            MOverhaul_MapQuestLine:SetHidden(true)
+        end
+        return
+    end
+
+    if not MOverhaul_MapQuestLine then
+        MOverhaul_MapQuestLine = WINDOW_MANAGER:CreateControl("MOverhaul_MapQuestLine", ZO_WorldMapContainer, CT_LINE)
+        MOverhaul_MapQuestLine:SetThickness(5)
+        MOverhaul_MapQuestLine:SetColor(0.2, 0.8, 1, 0.7) -- Light blue line
+        MOverhaul_MapQuestLine:SetDrawLevel(2)
+    end
+
+    local w, h = ZO_WorldMapContainer:GetDimensions()
+    local startX = playerX * w
+    local startY = playerY * h
+    local endX = pinX * w
+    local endY = pinY * h
+
+    MOverhaul_MapQuestLine:ClearAnchors()
+    MOverhaul_MapQuestLine:SetAnchor(TOPLEFT, ZO_WorldMapContainer, TOPLEFT, 0, 0)
+    MOverhaul_MapQuestLine:SetStartPoint(startX, startY)
+    MOverhaul_MapQuestLine:SetEndPoint(endX, endY)
+    MOverhaul_MapQuestLine:SetHidden(false)
 end
 
 local function GetQuality(bagId, slotIndex)
@@ -352,6 +436,19 @@ local function OnAddOnLoaded(event, addonName)
                     end,
                     default = true,
                 },
+                {
+                    type = "checkbox",
+                    name = "Quest Map Line (Modulo)",
+                    tooltip = "Habilita ou desabilita a linha reta ligando o jogador ao objetivo da quest ativa no mapa.",
+                    getFunc = function() return MOverhaul.db.questMapLineEnabled end,
+                    setFunc = function(value) 
+                        MOverhaul.db.questMapLineEnabled = value 
+                        if not value and MOverhaul_MapQuestLine then
+                            MOverhaul_MapQuestLine:SetHidden(true)
+                        end
+                    end,
+                    default = true,
+                },
             }
             
             LAM:RegisterAddonPanel("MOverhaul_SettingsPanel", panelData)
@@ -381,6 +478,13 @@ local function OnAddOnLoaded(event, addonName)
                 end
             end
         end)
+
+        if ZO_WorldMap then
+            local mapUpdateControl = WINDOW_MANAGER:CreateControl("MOverhaul_MapQuestUpdate", ZO_WorldMap, CT_CONTROL)
+            mapUpdateControl:SetHandler("OnUpdate", function(self)
+                UpdateMapQuestLine()
+            end)
+        end
 
     end
 end
