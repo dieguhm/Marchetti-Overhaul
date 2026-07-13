@@ -489,4 +489,58 @@ local function OnAddOnLoaded(event, addonName)
     end
 end
 
+SLASH_COMMANDS["/mo_debugmap"] = function()
+    local playerX, playerY = GetMapPlayerPosition("player")
+    d("[MOverhaul] Player Pos: " .. tostring(playerX) .. ", " .. tostring(playerY))
+
+    local pinManager = ZO_WorldMap_GetPinManager()
+    if not pinManager then
+        d("[MOverhaul] Pin Manager is nil!")
+        return
+    end
+
+    if not pinManager.m_pins then
+        d("[MOverhaul] pinManager.m_pins is nil!")
+        return
+    end
+
+    local count = 0
+    for k, v in pairs(pinManager.m_pins) do
+        count = count + 1
+    end
+    d("[MOverhaul] Total Pins: " .. count)
+
+    local targetPin = nil
+    for pinKey, pin in pairs(pinManager.m_pins) do
+        local pinType = pin:GetPinType()
+        if pinType == MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION or pinType == MAP_PIN_TYPE_ASSISTED_QUEST_ENDING then
+            targetPin = pin
+            d("[MOverhaul] Found assisted quest pin of type: " .. tostring(pinType))
+            break
+        elseif pinType == MAP_PIN_TYPE_QUEST_CONDITION or pinType == MAP_PIN_TYPE_QUEST_ENDING then
+            if not targetPin then
+                targetPin = pin
+                d("[MOverhaul] Found quest pin of type: " .. tostring(pinType))
+            end
+        end
+    end
+
+    if not targetPin then
+        d("[MOverhaul] No Quest Pin found!")
+        return
+    end
+
+    local pinX, pinY = targetPin:GetNormalizedPosition()
+    d("[MOverhaul] Target Pin Pos: " .. tostring(pinX) .. ", " .. tostring(pinY))
+
+    local w, h = ZO_WorldMapContainer:GetDimensions()
+    d("[MOverhaul] Container Size: " .. tostring(w) .. "x" .. tostring(h))
+
+    local startX = playerX * w
+    local startY = playerY * h
+    local endX = pinX * w
+    local endY = pinY * h
+    d("[MOverhaul] Line Points: Start(" .. tostring(startX) .. ", " .. tostring(startY) .. ") -> End(" .. tostring(endX) .. ", " .. tostring(endY) .. ")")
+end
+
 EVENT_MANAGER:RegisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED, OnAddOnLoaded)
