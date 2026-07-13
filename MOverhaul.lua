@@ -6,6 +6,7 @@ local defaults = {
     gearLockoutEnabled = true,
     overloadIndicatorEnabled = true,
     questMapLineEnabled = true,
+    quest3DArrowEnabled = true,
 }
 
 local overloadLabel = nil
@@ -144,22 +145,42 @@ local MOverhaul_MapQuestLine = nil
 local lastMapUpdate = 0
 local MAP_UPDATE_INTERVAL = 0.05 -- Update 20 times per second
 
-local function UpdateMapQuestLine()
-    if not MOverhaul.db or not MOverhaul.db.questMapLineEnabled then
-        if MOverhaul_MapQuestLine then
-            MOverhaul_MapQuestLine:SetHidden(true)
+local quest3DArrow = nil
+
+local function UpdateQuest3DArrow(pinX, pinY)
+    if not Lib3DArrow then return end
+    if not MOverhaul.db or not MOverhaul.db.quest3DArrowEnabled then
+        if quest3DArrow then
+            quest3DArrow:SetTarget(0, 0)
         end
         return
     end
 
+    if not quest3DArrow then
+        quest3DArrow = Lib3DArrow:CreateArrow({
+            arrowMagnitude = 6,
+            depthBuffer = true
+        })
+        if quest3DArrow then
+            quest3DArrow:ChangeColours("00FFFF", "00FFFF") -- Cyan color
+        end
+    end
+
+    if quest3DArrow then
+        if pinX and pinY and pinX > 0 and pinY > 0 then
+            quest3DArrow:SetTarget(pinX, pinY)
+        else
+            quest3DArrow:SetTarget(0, 0)
+        end
+    end
+end
+
+local function UpdateMapQuestLine()
     local time = GetFrameTimeSeconds()
     if time - lastMapUpdate < MAP_UPDATE_INTERVAL then return end
     lastMapUpdate = time
 
     if not ZO_WorldMap or ZO_WorldMap:IsHidden() then
-        if MOverhaul_MapQuestLine then
-            MOverhaul_MapQuestLine:SetHidden(true)
-        end
         return
     end
 
@@ -181,35 +202,36 @@ local function UpdateMapQuestLine()
         activePins = pinManager.m_Active
     end
 
-    if not activePins then return end
-
     local targetPin = nil
-    for pinKey, pin in pairs(activePins) do
-        if type(pin) == "table" or type(pin) == "userdata" then
-            if pin.GetPinType and pin.GetNormalizedPosition then
-                local pinType = pin:GetPinType()
-                -- Prioritize assisted quest pins
-                if pinType == MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION or pinType == MAP_PIN_TYPE_ASSISTED_QUEST_ENDING then
-                    targetPin = pin
-                    break
-                elseif pinType == MAP_PIN_TYPE_QUEST_CONDITION or pinType == MAP_PIN_TYPE_QUEST_ENDING then
-                    if not targetPin then
+    if activePins then
+        for pinKey, pin in pairs(activePins) do
+            if type(pin) == "table" or type(pin) == "userdata" then
+                if pin.GetPinType and pin.GetNormalizedPosition then
+                    local pinType = pin:GetPinType()
+                    -- Prioritize assisted quest pins
+                    if pinType == MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION or pinType == MAP_PIN_TYPE_ASSISTED_QUEST_ENDING then
                         targetPin = pin
+                        break
+                    elseif pinType == MAP_PIN_TYPE_QUEST_CONDITION or pinType == MAP_PIN_TYPE_QUEST_ENDING then
+                        if not targetPin then
+                            targetPin = pin
+                        end
                     end
                 end
             end
         end
     end
 
-    if not targetPin then
-        if MOverhaul_MapQuestLine then
-            MOverhaul_MapQuestLine:SetHidden(true)
-        end
-        return
+    local pinX, pinY = 0, 0
+    if targetPin then
+        pinX, pinY = targetPin:GetNormalizedPosition()
     end
 
-    local pinX, pinY = targetPin:GetNormalizedPosition()
-    if not pinX or pinX == 0 then
+    -- Update 3D Arrow
+    UpdateQuest3DArrow(pinX, pinY)
+
+    -- Draw the 2D Line on the Map
+    if not MOverhaul.db or not MOverhaul.db.questMapLineEnabled or pinX == 0 or pinY == 0 then
         if MOverhaul_MapQuestLine then
             MOverhaul_MapQuestLine:SetHidden(true)
         end
@@ -462,6 +484,19 @@ local function OnAddOnLoaded(event, addonName)
                         MOverhaul.db.questMapLineEnabled = value 
                         if not value and MOverhaul_MapQuestLine then
                             MOverhaul_MapQuestLine:SetHidden(true)
+                        end
+                    end,
+                    default = true,
+                },
+                {
+                    type = "checkbox",
+                    name = "Quest 3D Arrow (Modulo)",
+                    tooltip = "Habilita ou desabilita a seta 3D na tela apontando para a quest ativa (Requer Lib3D e Lib3DArrow).",
+                    getFunc = function() return MOverhaul.db.quest3DArrowEnabled end,
+                    setFunc = function(value) 
+                        MOverhaul.db.quest3DArrowEnabled = value 
+                        if not value and quest3DArrow then
+                            quest3DArrow:SetTarget(0, 0)
                         end
                     end,
                     default = true,

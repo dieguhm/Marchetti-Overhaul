@@ -4,6 +4,7 @@
 ## Author: Marchetti
 ## Description: Addon principal M Overhaul com modulo Gear Lockout.
 ## DependsOn: LibAddonMenu-2.0
+## OptionalDependsOn: Lib3D Lib3DArrow
 ## SavedVariables: MOverhaul_SavedVariables
 
 MOverhaul.lua
