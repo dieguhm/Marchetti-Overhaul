@@ -541,17 +541,76 @@ local function OnAddOnLoaded(event, addonName)
 end
 
 SLASH_COMMANDS["/mo_debugmap"] = function()
-    local pinTypes = { 16, 28, 29, 31, 34, 35 }
-    d("[MOverhaul] Mapping Pin Type Constants:")
-    for k, v in pairs(_G) do
-        if type(k) == "string" and string.find(k, "^MAP_PIN_TYPE_") then
-            for _, val in ipairs(pinTypes) do
-                if v == val then
-                    d(k .. " = " .. tostring(v))
-                end
+    local names = {
+        "MAP_PIN_TYPE_QUEST_CONDITION",
+        "MAP_PIN_TYPE_QUEST_ENDING",
+        "MAP_PIN_TYPE_QUEST_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_QUEST_REPEATABLE_CONDITION",
+        "MAP_PIN_TYPE_QUEST_REPEATABLE_ENDING",
+        "MAP_PIN_TYPE_QUEST_REPEATABLE_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_QUEST_OFFER",
+        "MAP_PIN_TYPE_QUEST_MAIN_STORY",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_REPEATABLE_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_REPEATABLE_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_REPEATABLE_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_TRACKED_QUEST_CONDITION",
+        "MAP_PIN_TYPE_TRACKED_QUEST_ENDING",
+        "MAP_PIN_TYPE_TRACKED_QUEST_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_TRACKED_QUEST_REPEATABLE_CONDITION",
+        "MAP_PIN_TYPE_TRACKED_QUEST_REPEATABLE_ENDING",
+        "MAP_PIN_TYPE_TRACKED_QUEST_REPEATABLE_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_QUEST_ZONE_BORDER",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_BORDER",
+        "MAP_PIN_TYPE_TRACKED_QUEST_ZONE_BORDER",
+        "MAP_PIN_TYPE_QUEST_ZONE_BORDER_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_BORDER_ENDING",
+        "MAP_PIN_TYPE_TRACKED_QUEST_ZONE_BORDER_ENDING",
+    }
+
+    d("[MOverhaul] Mapped Constants:")
+    for _, name in ipairs(names) do
+        local val = _G[name]
+        if val then
+            d(name .. " = " .. tostring(val))
+        end
+    end
+
+    local playerX, playerY = GetMapPlayerPosition("player")
+    d("[MOverhaul] Player Pos: " .. tostring(playerX) .. ", " .. tostring(playerY))
+
+    local pinManager = ZO_WorldMap_GetPinManager()
+    if not pinManager then
+        d("[MOverhaul] Pin Manager is nil!")
+        return
+    end
+
+    local activePins = nil
+    if pinManager.GetActiveObjects then
+        activePins = pinManager:GetActiveObjects()
+    elseif pinManager.m_Active then
+        activePins = pinManager.m_Active
+    end
+
+    if not activePins then
+        d("[MOverhaul] Active Pins table is nil!")
+        return
+    end
+
+    d("[MOverhaul] Active Quest Pins:")
+    local count = 0
+    for pinKey, pin in pairs(activePins) do
+        if type(pin) == "table" or type(pin) == "userdata" then
+            if pin.IsQuest and pin:IsQuest() then
+                count = count + 1
+                local pinX, pinY = pin:GetNormalizedPosition()
+                d(count .. ") type=" .. tostring(pin:GetPinType()) .. ", pos=" .. tostring(pinX) .. "," .. tostring(pinY))
             end
         end
     end
+    d("[MOverhaul] Total Quest Pins found: " .. count)
 end
 
 EVENT_MANAGER:RegisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED, OnAddOnLoaded)
