@@ -208,11 +208,17 @@ local function UpdateMapQuestLine()
             if type(pin) == "table" or type(pin) == "userdata" then
                 if pin.GetPinType and pin.GetNormalizedPosition then
                     local pinType = pin:GetPinType()
-                    -- Prioritize assisted quest pins
-                    if pinType == MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION or pinType == MAP_PIN_TYPE_ASSISTED_QUEST_ENDING then
+                    -- Prioritize assisted quest pins (Block 1: 10 to 17)
+                    if pinType >= 10 and pinType <= 17 then
                         targetPin = pin
                         break
-                    elseif pinType == MAP_PIN_TYPE_QUEST_CONDITION or pinType == MAP_PIN_TYPE_QUEST_ENDING then
+                    -- Fall back to tracked secondary quest pins (Block 2: 19 to 26)
+                    elseif pinType >= 19 and pinType <= 26 then
+                        if not targetPin or targetPin:GetPinType() > 26 then
+                            targetPin = pin
+                        end
+                    -- Fall back to general journal quest pins (Block 3: 28 to 35)
+                    elseif pinType >= 28 and pinType <= 35 then
                         if not targetPin then
                             targetPin = pin
                         end
@@ -541,43 +547,6 @@ local function OnAddOnLoaded(event, addonName)
 end
 
 SLASH_COMMANDS["/mo_debugmap"] = function()
-    local names = {
-        "MAP_PIN_TYPE_QUEST_CONDITION",
-        "MAP_PIN_TYPE_QUEST_ENDING",
-        "MAP_PIN_TYPE_QUEST_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_QUEST_REPEATABLE_CONDITION",
-        "MAP_PIN_TYPE_QUEST_REPEATABLE_ENDING",
-        "MAP_PIN_TYPE_QUEST_REPEATABLE_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_QUEST_OFFER",
-        "MAP_PIN_TYPE_QUEST_MAIN_STORY",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_REPEATABLE_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_REPEATABLE_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_REPEATABLE_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_TRACKED_QUEST_CONDITION",
-        "MAP_PIN_TYPE_TRACKED_QUEST_ENDING",
-        "MAP_PIN_TYPE_TRACKED_QUEST_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_TRACKED_QUEST_REPEATABLE_CONDITION",
-        "MAP_PIN_TYPE_TRACKED_QUEST_REPEATABLE_ENDING",
-        "MAP_PIN_TYPE_TRACKED_QUEST_REPEATABLE_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_QUEST_ZONE_BORDER",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_BORDER",
-        "MAP_PIN_TYPE_TRACKED_QUEST_ZONE_BORDER",
-        "MAP_PIN_TYPE_QUEST_ZONE_BORDER_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_BORDER_ENDING",
-        "MAP_PIN_TYPE_TRACKED_QUEST_ZONE_BORDER_ENDING",
-    }
-
-    d("[MOverhaul] Mapped Constants:")
-    for _, name in ipairs(names) do
-        local val = _G[name]
-        if val then
-            d(name .. " = " .. tostring(val))
-        end
-    end
-
     local playerX, playerY = GetMapPlayerPosition("player")
     d("[MOverhaul] Player Pos: " .. tostring(playerX) .. ", " .. tostring(playerY))
 
@@ -599,18 +568,56 @@ SLASH_COMMANDS["/mo_debugmap"] = function()
         return
     end
 
-    d("[MOverhaul] Active Quest Pins:")
     local count = 0
-    for pinKey, pin in pairs(activePins) do
-        if type(pin) == "table" or type(pin) == "userdata" then
-            if pin.IsQuest and pin:IsQuest() then
-                count = count + 1
-                local pinX, pinY = pin:GetNormalizedPosition()
-                d(count .. ") type=" .. tostring(pin:GetPinType()) .. ", pos=" .. tostring(pinX) .. "," .. tostring(pinY))
+    for k, v in pairs(activePins) do
+        count = count + 1
+    end
+    d("[MOverhaul] Active Pins Count: " .. count)
+
+    local targetPin = nil
+    if activePins then
+        for pinKey, pin in pairs(activePins) do
+            if type(pin) == "table" or type(pin) == "userdata" then
+                if pin.GetPinType and pin.GetNormalizedPosition then
+                    local pinType = pin:GetPinType()
+                    if pinType >= 10 and pinType <= 17 then
+                        targetPin = pin
+                        d("[MOverhaul] Found assisted quest pin (Block 1): type=" .. tostring(pinType))
+                        break
+                    elseif pinType >= 19 and pinType <= 26 then
+                        if not targetPin or targetPin:GetPinType() > 26 then
+                            targetPin = pin
+                            d("[MOverhaul] Found tracked secondary quest pin (Block 2): type=" .. tostring(pinType))
+                        end
+                    elseif pinType >= 28 and pinType <= 35 then
+                        if not targetPin then
+                            targetPin = pin
+                            d("[MOverhaul] Found general quest pin (Block 3): type=" .. tostring(pinType))
+                        end
+                    end
+                end
             end
         end
     end
-    d("[MOverhaul] Total Quest Pins found: " .. count)
+
+    if not targetPin then
+        d("[MOverhaul] No Quest Pin found!")
+        return
+    end
+
+    local pinX, pinY = targetPin:GetNormalizedPosition()
+    d("[MOverhaul] Target Pin Pos: " .. tostring(pinX) .. ", " .. tostring(pinY))
+
+    local w, h = ZO_WorldMapContainer:GetDimensions()
+    d("[MOverhaul] Container Size: " .. tostring(w) .. "x" .. tostring(h))
+
+    local startX = playerX * w
+    local startY = playerY * h
+    local endX = pinX * w
+    local endY = pinY * h
+    d("[MOverhaul] Line Points: Start(" .. tostring(startX) .. ", " .. tostring(startY) .. ") -> End(" .. tostring(endX) .. ", " .. tostring(endY) .. ")")
+    d("[MOverhaul] Lib3D loaded: " .. tostring(Lib3D ~= nil))
+    d("[MOverhaul] Lib3DArrow loaded: " .. tostring(Lib3DArrow ~= nil))
 end
 
 EVENT_MANAGER:RegisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED, OnAddOnLoaded)
