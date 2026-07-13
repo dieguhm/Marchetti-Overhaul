@@ -562,49 +562,24 @@ SLASH_COMMANDS["/mo_debugmap"] = function()
         return
     end
 
-    local count = 0
-    for k, v in pairs(activePins) do
-        count = count + 1
-    end
-    d("[MOverhaul] Active Pins Count: " .. count)
+    d("[MOverhaul] Constants:")
+    d("MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION: " .. tostring(MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION))
+    d("MAP_PIN_TYPE_ASSISTED_QUEST_ENDING: " .. tostring(MAP_PIN_TYPE_ASSISTED_QUEST_ENDING))
+    d("MAP_PIN_TYPE_QUEST_CONDITION: " .. tostring(MAP_PIN_TYPE_QUEST_CONDITION))
+    d("MAP_PIN_TYPE_QUEST_ENDING: " .. tostring(MAP_PIN_TYPE_QUEST_ENDING))
 
-    local targetPin = nil
+    d("[MOverhaul] Active Quest Pins:")
+    local count = 0
     for pinKey, pin in pairs(activePins) do
         if type(pin) == "table" or type(pin) == "userdata" then
-            if pin.GetPinType then
-                local pinType = pin:GetPinType()
-                if pinType == MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION or pinType == MAP_PIN_TYPE_ASSISTED_QUEST_ENDING then
-                    targetPin = pin
-                    d("[MOverhaul] Found assisted quest pin of type: " .. tostring(pinType))
-                    break
-                elseif pinType == MAP_PIN_TYPE_QUEST_CONDITION or pinType == MAP_PIN_TYPE_QUEST_ENDING then
-                    if not targetPin then
-                        targetPin = pin
-                        d("[MOverhaul] Found quest pin of type: " .. tostring(pinType))
-                    end
-                end
+            if pin.IsQuest and pin:IsQuest() then
+                count = count + 1
+                local pinX, pinY = pin:GetNormalizedPosition()
+                d(count .. ") type=" .. tostring(pin:GetPinType()) .. ", pos=" .. tostring(pinX) .. "," .. tostring(pinY))
             end
         end
     end
-
-    if not targetPin then
-        d("[MOverhaul] No Quest Pin found in active pins!")
-        return
-    end
-
-    local pinX, pinY = targetPin:GetNormalizedPosition()
-    d("[MOverhaul] Target Pin Pos: " .. tostring(pinX) .. ", " .. tostring(pinY))
-
-    local w, h = ZO_WorldMapContainer:GetDimensions()
-    d("[MOverhaul] Container Size: " .. tostring(w) .. "x" .. tostring(h))
-
-    local startX = playerX * w
-    local startY = playerY * h
-    local endX = pinX * w
-    local endY = pinY * h
-    d("[MOverhaul] Line Points: Start(" .. tostring(startX) .. ", " .. tostring(startY) .. ") -> End(" .. tostring(endX) .. ", " .. tostring(endY) .. ")")
-    d("[MOverhaul] Lib3D loaded: " .. tostring(Lib3D ~= nil))
-    d("[MOverhaul] Lib3DArrow loaded: " .. tostring(Lib3DArrow ~= nil))
+    d("[MOverhaul] Total Quest Pins found: " .. count)
 end
 
 EVENT_MANAGER:RegisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED, OnAddOnLoaded)
