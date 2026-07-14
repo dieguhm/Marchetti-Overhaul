@@ -222,9 +222,8 @@ local function OnWaypointArrowUpdate(self, elapsed)
     end
 
     local cameraHeading = GetPlayerCameraHeading()
-    -- Allow dynamic calibration offset, defaulting to 45 degrees (math.pi / 4 radians)
-    -- which points the North-East arrow texture straight North (up) on the clock face.
-    local offset = MOverhaul.db and MOverhaul.db.arrowOffset or (math.pi / 4)
+    -- Allow dynamic calibration offset, defaulting to 0 degrees since arrow_up.dds points straight North by default.
+    local offset = MOverhaul.db and MOverhaul.db.arrowOffset or 0
     local relativeAngle = targetAngle - cameraHeading - offset
 
     -- Update texture rotation
@@ -255,11 +254,11 @@ local function CreateWaypointArrowControl()
     MOverhaul_WaypointArrow:SetMouseEnabled(not db.questWaypointArrowLocked)
     MOverhaul_WaypointArrow:SetClampedToScreen(true)
 
-    -- Arrow texture
+    -- Arrow texture (Simple native straight arrow pointing UP by default)
     local arrow = WINDOW_MANAGER:CreateControl("MOverhaul_WaypointArrowTexture", MOverhaul_WaypointArrow, CT_TEXTURE)
     arrow:SetAnchor(CENTER, MOverhaul_WaypointArrow, CENTER, 0, 0)
     arrow:SetDimensions(50, 50)
-    arrow:SetTexture("MOverhaul/art/arrow.dds")
+    arrow:SetTexture("EsoUI/Art/Buttons/arrow_up.dds")
     arrow:SetColor(0, 0.8, 1, 1)
 
     -- Distance text label
