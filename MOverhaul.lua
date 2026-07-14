@@ -206,9 +206,10 @@ local function OnWaypointArrowUpdate(self, elapsed)
     end
 
     local cameraHeading = GetPlayerCameraHeading()
-    -- Apply math.pi/4 offset because the arrow texture points North-East (up-right) by default.
-    -- Subtracting math.pi/4 rotates it 45 degrees counterclockwise to point North (up) by default.
-    local relativeAngle = targetAngle - cameraHeading - (math.pi / 4)
+    -- Allow dynamic calibration offset, defaulting to 225 degrees (5 * math.pi / 4 radians)
+    -- which points the North-East arrow texture straight North (up) on the clock face.
+    local offset = MOverhaul.db and MOverhaul.db.arrowOffset or (5 * math.pi / 4)
+    local relativeAngle = targetAngle - cameraHeading - offset
 
     -- Update texture rotation
     if arrowTexture then
@@ -736,6 +737,17 @@ SLASH_COMMANDS["/mo_debugwaypoint"] = function()
         d("LibGPS Distance (m): " .. tostring(distance))
     else
         d("LibGPS NOT LOADED")
+    end
+end
+
+SLASH_COMMANDS["/mo_offset"] = function(extra)
+    local num = tonumber(extra)
+    if num then
+        MOverhaul.db.arrowOffset = math.rad(num)
+        d("[MOverhaul] Deslocamento da seta definido para " .. tostring(num) .. " graus.")
+    else
+        local current = MOverhaul.db.arrowOffset or (5 * math.pi / 4)
+        d("[MOverhaul] Deslocamento atual: " .. tostring(math.floor(math.deg(current) + 0.5)) .. " graus. Use: /mo_offset <graus>")
     end
 end
 
