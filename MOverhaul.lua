@@ -185,6 +185,8 @@ local function OnWaypointArrowUpdate(self, elapsed)
     if LibGPS then
         local distance = LibGPS:GetLocalDistanceInMeters(px, py, tx, ty)
         if distance then
+            -- Scale down LibGPS distance to align with the game's native world scale
+            distance = distance / 2.0
             if distance > 1000 then
                 distanceText = string.format("%.1f km", distance / 1000)
             else
@@ -202,12 +204,9 @@ local function OnWaypointArrowUpdate(self, elapsed)
     end
 
     -- 2. Calculate angle and rotation
-    local dx = tx - px
-    local dy = ty - py
-
     local targetAngle = 0
-    if dx ~= 0 or dy ~= 0 then
-        targetAngle = math.atan2(dx, -dy)
+    if px ~= tx or py ~= ty then
+        targetAngle = math.atan2(px - tx, py - ty)
     end
 
     local cameraHeading = GetPlayerCameraHeading()
