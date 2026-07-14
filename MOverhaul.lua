@@ -206,9 +206,9 @@ local function OnWaypointArrowUpdate(self, elapsed)
     end
 
     local cameraHeading = GetPlayerCameraHeading()
-    -- Apply 3 * math.pi/4 offset because the arrow texture points South-East (down-right) by default.
-    -- Subtracting 3 * math.pi/4 rotates it 135 degrees counterclockwise to point North (up) by default.
-    local relativeAngle = targetAngle - cameraHeading - (3 * math.pi / 4)
+    -- Apply math.pi/4 offset because the arrow texture points North-East (up-right) by default.
+    -- Subtracting math.pi/4 rotates it 45 degrees counterclockwise to point North (up) by default.
+    local relativeAngle = targetAngle - cameraHeading - (math.pi / 4)
 
     -- Update texture rotation
     if arrowTexture then
