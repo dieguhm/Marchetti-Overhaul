@@ -694,12 +694,10 @@ local function OnAddOnLoaded(event, addonName)
             end
         end)
 
-        if ZO_WorldMap then
-            local mapUpdateControl = WINDOW_MANAGER:CreateControl("MOverhaul_MapQuestUpdate", ZO_WorldMap, CT_CONTROL)
-            mapUpdateControl:SetHandler("OnUpdate", function(self)
-                UpdateMapQuestLine()
-            end)
-        end
+        local mapUpdateControl = WINDOW_MANAGER:CreateControl("MOverhaul_MapQuestUpdate", GuiRoot, CT_CONTROL)
+        mapUpdateControl:SetHandler("OnUpdate", function(self)
+            UpdateMapQuestLine()
+        end)
 
     end
 end
