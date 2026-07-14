@@ -7,6 +7,10 @@ local defaults = {
     overloadIndicatorEnabled = true,
     questMapLineEnabled = true,
     quest3DArrowEnabled = true,
+    questWaypointArrowEnabled = true,
+    questWaypointArrowLocked = false,
+    questWaypointArrowX = nil,
+    questWaypointArrowY = nil,
 }
 
 local overloadLabel = nil
@@ -141,6 +145,126 @@ function MOverhaul.UpdateOverloadState()
     end
 end
 
+local MOverhaul_WaypointArrow = nil
+
+local function OnWaypointArrowUpdate(self, elapsed)
+    if not MOverhaul.db or not MOverhaul.db.questWaypointArrowEnabled then
+        self:SetHidden(true)
+        return
+    end
+
+    local tx, ty = MOverhaul.targetX, MOverhaul.targetY
+    if not tx or not ty then
+        self:SetHidden(true)
+        return
+    end
+
+    local px, py = GetMapPlayerPosition("player")
+    if not px or px == 0 then
+        self:SetHidden(true)
+        return
+    end
+
+    self:SetHidden(false)
+
+    -- 1. Calculate distance in meters
+    local distanceText = ""
+    local LibGPS = LibGPS3 or LibGPS2 or LibGPS
+    if LibGPS then
+        local distance = LibGPS:GetLocalDistanceInMeters(px, py, tx, ty)
+        if distance then
+            if distance > 1000 then
+                distanceText = string.format("%.1f km", distance / 1000)
+            else
+                distanceText = string.format("%d m", math.floor(distance))
+            end
+        end
+    else
+        local distPct = math.sqrt((tx - px)^2 + (ty - py)^2)
+        distanceText = string.format("%.0f%%", distPct * 100)
+    end
+
+    -- 2. Calculate angle and rotation
+    local dx = tx - px
+    local dy = ty - py
+
+    local targetAngle = 0
+    if dx ~= 0 or dy ~= 0 then
+        targetAngle = math.atan2(dx, -dy)
+    end
+
+    local cameraHeading = GetPlayerCameraHeading()
+    local relativeAngle = targetAngle - cameraHeading
+
+    -- Update texture rotation
+    local arrowTexture = self:GetNamedChild("Texture")
+    if arrowTexture then
+        arrowTexture:SetTextureRotation(relativeAngle)
+    end
+
+    -- Update distance label
+    local label = self:GetNamedChild("Label")
+    if label then
+        label:SetText(distanceText)
+    end
+end
+
+local function CreateWaypointArrowControl()
+    if MOverhaul_WaypointArrow then return end
+
+    -- Create top level window
+    MOverhaul_WaypointArrow = WINDOW_MANAGER:CreateTopLevelWindow("MOverhaul_WaypointArrow")
+    MOverhaul_WaypointArrow:SetDimensions(80, 80)
+
+    -- Load saved position or use default (center-top)
+    local db = MOverhaul.db
+    if db.questWaypointArrowX and db.questWaypointArrowY then
+        MOverhaul_WaypointArrow:ClearAllPoints()
+        MOverhaul_WaypointArrow:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, db.questWaypointArrowX, db.questWaypointArrowY)
+    else
+        MOverhaul_WaypointArrow:ClearAllPoints()
+        MOverhaul_WaypointArrow:SetAnchor(CENTER, GuiRoot, CENTER, 0, -200)
+    end
+
+    MOverhaul_WaypointArrow:SetMovable(not db.questWaypointArrowLocked)
+    MOverhaul_WaypointArrow:SetMouseEnabled(not db.questWaypointArrowLocked)
+    MOverhaul_WaypointArrow:SetClampedToScreen(true)
+
+    -- Glow backing
+    local glow = WINDOW_MANAGER:CreateControl("MOverhaul_WaypointArrowGlow", MOverhaul_WaypointArrow, CT_TEXTURE)
+    glow:SetAnchor(CENTER, MOverhaul_WaypointArrow, CENTER, 0, 0)
+    glow:SetDimensions(80, 80)
+    glow:SetTexture("MOverhaul/art/glow.dds")
+    glow:SetColor(0, 0.7, 1, 0.4)
+
+    -- Arrow texture
+    local arrow = WINDOW_MANAGER:CreateControl("MOverhaul_WaypointArrowTexture", MOverhaul_WaypointArrow, CT_TEXTURE)
+    arrow:SetAnchor(CENTER, MOverhaul_WaypointArrow, CENTER, 0, 0)
+    arrow:SetDimensions(50, 50)
+    arrow:SetTexture("MOverhaul/art/arrow.dds")
+    arrow:SetColor(0, 0.8, 1, 1)
+
+    -- Distance text label
+    local label = WINDOW_MANAGER:CreateControl("MOverhaul_WaypointArrowLabel", MOverhaul_WaypointArrow, CT_LABEL)
+    label:SetAnchor(TOP, MOverhaul_WaypointArrow, BOTTOM, 0, 5)
+    label:SetFont("$(BOLD_FONT)|16|soft-shadow-thin")
+    label:SetColor(1, 1, 1, 1)
+    label:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
+    label:SetText("")
+
+    -- Drag behavior
+    MOverhaul_WaypointArrow:SetHandler("OnMoveStop", function(self)
+        local isValidAnchor, point, relativeTo, relativePoint, offsetX, offsetY = self:GetAnchor()
+        if isValidAnchor then
+            db.questWaypointArrowX = offsetX
+            db.questWaypointArrowY = offsetY
+        end
+    end)
+
+    MOverhaul_WaypointArrow:SetHandler("OnUpdate", OnWaypointArrowUpdate)
+    MOverhaul_WaypointArrow:SetHidden(not db.questWaypointArrowEnabled)
+end
+
 local MOverhaul_MapQuestLine = nil
 local lastMapUpdate = 0
 local MAP_UPDATE_INTERVAL = 0.05 -- Update 20 times per second
@@ -231,6 +355,13 @@ local function UpdateMapQuestLine()
     local pinX, pinY = 0, 0
     if targetPin then
         pinX, pinY = targetPin:GetNormalizedPosition()
+        MOverhaul.targetX = pinX
+        MOverhaul.targetY = pinY
+        MOverhaul.targetPinType = targetPin:GetPinType()
+    else
+        MOverhaul.targetX = nil
+        MOverhaul.targetY = nil
+        MOverhaul.targetPinType = nil
     end
 
     -- Update 3D Arrow
@@ -397,6 +528,7 @@ local function OnAddOnLoaded(event, addonName)
         EVENT_MANAGER:UnregisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED)
         
         MOverhaul.db = ZO_SavedVars:NewAccountWide("MOverhaul_SavedVariables", 1, nil, defaults)
+        CreateWaypointArrowControl()
         
         ZO_Dialogs_RegisterCustomDialog("M_OVERHAUL_CONFIRM", {
             title = {
@@ -505,6 +637,33 @@ local function OnAddOnLoaded(event, addonName)
                         end
                     end,
                     default = true,
+                },
+                {
+                    type = "checkbox",
+                    name = "Quest Waypoint Arrow (Modulo)",
+                    tooltip = "Habilita ou desabilita a seta de navegacao 2D no HUD (estilo Zygor).",
+                    getFunc = function() return MOverhaul.db.questWaypointArrowEnabled end,
+                    setFunc = function(value) 
+                        MOverhaul.db.questWaypointArrowEnabled = value 
+                        if MOverhaul_WaypointArrow then
+                            MOverhaul_WaypointArrow:SetHidden(not value)
+                        end
+                    end,
+                    default = true,
+                },
+                {
+                    type = "checkbox",
+                    name = "Bloquear Seta de Waypoint",
+                    tooltip = "Bloqueia a movimentacao da seta de navegacao 2D no HUD para evitar arrastes acidentais.",
+                    getFunc = function() return MOverhaul.db.questWaypointArrowLocked end,
+                    setFunc = function(value) 
+                        MOverhaul.db.questWaypointArrowLocked = value 
+                        if MOverhaul_WaypointArrow then
+                            MOverhaul_WaypointArrow:SetMovable(not value)
+                            MOverhaul_WaypointArrow:SetMouseEnabled(not value)
+                        end
+                    end,
+                    default = false,
                 },
             }
             
