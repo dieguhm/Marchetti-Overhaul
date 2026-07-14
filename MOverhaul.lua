@@ -199,16 +199,32 @@ local function OnWaypointArrowUpdate(self, elapsed)
         label:SetColor(1, 1, 1, 1)
     end
 
-    -- 2. Calculate angle and rotation
+    -- 2. Calculate angle and rotation using global coordinates to avoid local map rotation issues
     local targetAngle = 0
-    if px ~= tx or py ~= ty then
+    local converted = false
+    if LibGPS then
+        LibGPS:PushCurrentMap()
+        local gpx, gpy = LibGPS:LocalToGlobal(px, py)
+        local gtx, gty = LibGPS:LocalToGlobal(tx, ty)
+        LibGPS:PopCurrentMap()
+
+        if gpx and gpy and gtx and gty then
+            -- In global Tamriel coordinates, Y increases downwards, X increases Eastwards.
+            -- This matches the standard compass vector where dx is horizontal and dy is vertical.
+            targetAngle = math.atan2(gtx - gpx, gpy - gty)
+            converted = true
+        end
+    end
+
+    if not converted then
+        -- Fallback to local coordinates if LibGPS conversion fails
         targetAngle = math.atan2(tx - px, py - ty)
     end
 
     local cameraHeading = GetPlayerCameraHeading()
-    -- Allow dynamic calibration offset, defaulting to 225 degrees (5 * math.pi / 4 radians)
+    -- Allow dynamic calibration offset, defaulting to 45 degrees (math.pi / 4 radians)
     -- which points the North-East arrow texture straight North (up) on the clock face.
-    local offset = MOverhaul.db and MOverhaul.db.arrowOffset or (5 * math.pi / 4)
+    local offset = MOverhaul.db and MOverhaul.db.arrowOffset or (math.pi / 4)
     local relativeAngle = targetAngle - cameraHeading - offset
 
     -- Update texture rotation
@@ -535,6 +551,7 @@ local function OnAddOnLoaded(event, addonName)
         EVENT_MANAGER:UnregisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED)
         
         MOverhaul.db = ZO_SavedVars:NewAccountWide("MOverhaul_SavedVariables", 1, nil, defaults)
+        MOverhaul.db.arrowOffset = nil -- Reset experimental values for the new math transition
         CreateWaypointArrowControl()
         
         ZO_Dialogs_RegisterCustomDialog("M_OVERHAUL_CONFIRM", {
