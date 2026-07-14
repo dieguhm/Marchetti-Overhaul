@@ -157,14 +157,14 @@ local function OnWaypointArrowUpdate(self, elapsed)
     local arrowTexture = self:GetNamedChild("Texture")
     local glowTexture = self:GetNamedChild("Glow")
 
-    local tx, ty = MOverhaul.targetX, MOverhaul.targetY
+    local tx, ty = GetMapPlayerWaypoint()
     local px, py = GetMapPlayerPosition("player")
 
-    if not tx or not ty or not px or px == 0 then
-        -- Faded state when no quest target is found
+    if not tx or tx == 0 or not ty or ty == 0 or not px or px == 0 then
+        -- Faded state when no custom waypoint is set
         self:SetHidden(false)
         if label then
-            label:SetText("Nenhum Objetivo")
+            label:SetText("Nenhum Destino")
             label:SetColor(1, 1, 1, 0.5)
         end
         if arrowTexture then
