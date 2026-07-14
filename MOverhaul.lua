@@ -304,15 +304,14 @@ local function UpdateMapQuestLine()
     if time - lastMapUpdate < MAP_UPDATE_INTERVAL then return end
     lastMapUpdate = time
 
-    if not ZO_WorldMap or ZO_WorldMap:IsHidden() then
-        return
-    end
-
     local playerX, playerY = GetMapPlayerPosition("player")
     if not playerX or playerX == 0 then
         if MOverhaul_MapQuestLine then
             MOverhaul_MapQuestLine:SetHidden(true)
         end
+        MOverhaul.targetX = nil
+        MOverhaul.targetY = nil
+        MOverhaul.targetPinType = nil
         return
     end
 
@@ -368,7 +367,7 @@ local function UpdateMapQuestLine()
     UpdateQuest3DArrow(pinX, pinY)
 
     -- Draw the 2D Line on the Map
-    if not MOverhaul.db or not MOverhaul.db.questMapLineEnabled or pinX == 0 or pinY == 0 then
+    if not ZO_WorldMap or ZO_WorldMap:IsHidden() or not MOverhaul.db or not MOverhaul.db.questMapLineEnabled or pinX == 0 or pinY == 0 then
         if MOverhaul_MapQuestLine then
             MOverhaul_MapQuestLine:SetHidden(true)
         end
