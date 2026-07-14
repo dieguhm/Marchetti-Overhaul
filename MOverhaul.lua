@@ -219,10 +219,10 @@ local function CreateWaypointArrowControl()
     -- Load saved position or use default (center-top)
     local db = MOverhaul.db
     if db.questWaypointArrowX and db.questWaypointArrowY then
-        MOverhaul_WaypointArrow:ClearAllPoints()
+        MOverhaul_WaypointArrow:ClearAnchors()
         MOverhaul_WaypointArrow:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, db.questWaypointArrowX, db.questWaypointArrowY)
     else
-        MOverhaul_WaypointArrow:ClearAllPoints()
+        MOverhaul_WaypointArrow:ClearAnchors()
         MOverhaul_WaypointArrow:SetAnchor(CENTER, GuiRoot, CENTER, 0, -200)
     end
 
