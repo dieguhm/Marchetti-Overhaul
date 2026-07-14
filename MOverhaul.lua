@@ -155,7 +155,6 @@ local function OnWaypointArrowUpdate(self, elapsed)
 
     local label = self:GetNamedChild("Label")
     local arrowTexture = self:GetNamedChild("Texture")
-    local glowTexture = self:GetNamedChild("Glow")
 
     local tx, ty = GetMapPlayerWaypoint()
     local px, py = GetMapPlayerPosition("player")
@@ -170,9 +169,6 @@ local function OnWaypointArrowUpdate(self, elapsed)
         if arrowTexture then
             arrowTexture:SetTextureRotation(0)
             arrowTexture:SetColor(1, 1, 1, 0.2)
-        end
-        if glowTexture then
-            glowTexture:SetColor(0, 0.7, 1, 0.1)
         end
         return
     end
@@ -210,15 +206,14 @@ local function OnWaypointArrowUpdate(self, elapsed)
     end
 
     local cameraHeading = GetPlayerCameraHeading()
-    local relativeAngle = targetAngle - cameraHeading
+    -- Apply math.pi/2 offset because the arrow texture points East (right) by default.
+    -- Subtracting math.pi/2 rotates it 90 degrees counterclockwise to point North (up) by default.
+    local relativeAngle = targetAngle - cameraHeading - (math.pi / 2)
 
     -- Update texture rotation
     if arrowTexture then
         arrowTexture:SetTextureRotation(relativeAngle)
         arrowTexture:SetColor(0, 0.8, 1, 1) -- Bright cyan
-    end
-    if glowTexture then
-        glowTexture:SetColor(0, 0.7, 1, 0.4)
     end
 end
 
@@ -242,13 +237,6 @@ local function CreateWaypointArrowControl()
     MOverhaul_WaypointArrow:SetMovable(not db.questWaypointArrowLocked)
     MOverhaul_WaypointArrow:SetMouseEnabled(not db.questWaypointArrowLocked)
     MOverhaul_WaypointArrow:SetClampedToScreen(true)
-
-    -- Glow backing
-    local glow = WINDOW_MANAGER:CreateControl("MOverhaul_WaypointArrowGlow", MOverhaul_WaypointArrow, CT_TEXTURE)
-    glow:SetAnchor(CENTER, MOverhaul_WaypointArrow, CENTER, 0, 0)
-    glow:SetDimensions(80, 80)
-    glow:SetTexture("MOverhaul/art/glow.dds")
-    glow:SetColor(0, 0.7, 1, 0.4)
 
     -- Arrow texture
     local arrow = WINDOW_MANAGER:CreateControl("MOverhaul_WaypointArrowTexture", MOverhaul_WaypointArrow, CT_TEXTURE)
