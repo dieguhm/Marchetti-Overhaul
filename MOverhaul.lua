@@ -202,7 +202,7 @@ local function OnWaypointArrowUpdate(self, elapsed)
     -- 2. Calculate angle and rotation
     local targetAngle = 0
     if px ~= tx or py ~= ty then
-        targetAngle = math.atan2(px - tx, py - ty)
+        targetAngle = math.atan2(tx - px, py - ty)
     end
 
     local cameraHeading = GetPlayerCameraHeading()
