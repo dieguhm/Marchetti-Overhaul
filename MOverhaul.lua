@@ -292,6 +292,7 @@ end
 local MOverhaul_MapQuestLine = nil
 local lastMapUpdate = 0
 local MAP_UPDATE_INTERVAL = 0.05 -- Update 20 times per second
+local lastPlayerMapRefresh = 0
 
 local quest3DArrow = nil
 
@@ -327,6 +328,13 @@ local function UpdateMapQuestLine()
     local time = GetFrameTimeSeconds()
     if time - lastMapUpdate < MAP_UPDATE_INTERVAL then return end
     lastMapUpdate = time
+
+    if not ZO_WorldMap or ZO_WorldMap:IsHidden() then
+        if time - lastPlayerMapRefresh >= 1.0 then
+            lastPlayerMapRefresh = time
+            SetMapToPlayerLocation()
+        end
+    end
 
     local playerX, playerY = GetMapPlayerPosition("player")
     if not playerX or playerX == 0 then
