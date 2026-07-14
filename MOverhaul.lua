@@ -153,15 +153,27 @@ local function OnWaypointArrowUpdate(self, elapsed)
         return
     end
 
-    local tx, ty = MOverhaul.targetX, MOverhaul.targetY
-    if not tx or not ty then
-        self:SetHidden(true)
-        return
-    end
+    local label = self:GetNamedChild("Label")
+    local arrowTexture = self:GetNamedChild("Texture")
+    local glowTexture = self:GetNamedChild("Glow")
 
+    local tx, ty = MOverhaul.targetX, MOverhaul.targetY
     local px, py = GetMapPlayerPosition("player")
-    if not px or px == 0 then
-        self:SetHidden(true)
+
+    if not tx or not ty or not px or px == 0 then
+        -- Faded state when no quest target is found
+        self:SetHidden(false)
+        if label then
+            label:SetText("Nenhum Objetivo")
+            label:SetColor(1, 1, 1, 0.5)
+        end
+        if arrowTexture then
+            arrowTexture:SetTextureRotation(0)
+            arrowTexture:SetColor(1, 1, 1, 0.2)
+        end
+        if glowTexture then
+            glowTexture:SetColor(0, 0.7, 1, 0.1)
+        end
         return
     end
 
@@ -184,6 +196,11 @@ local function OnWaypointArrowUpdate(self, elapsed)
         distanceText = string.format("%.0f%%", distPct * 100)
     end
 
+    if label then
+        label:SetText(distanceText)
+        label:SetColor(1, 1, 1, 1)
+    end
+
     -- 2. Calculate angle and rotation
     local dx = tx - px
     local dy = ty - py
@@ -197,15 +214,12 @@ local function OnWaypointArrowUpdate(self, elapsed)
     local relativeAngle = targetAngle - cameraHeading
 
     -- Update texture rotation
-    local arrowTexture = self:GetNamedChild("Texture")
     if arrowTexture then
         arrowTexture:SetTextureRotation(relativeAngle)
+        arrowTexture:SetColor(0, 0.8, 1, 1) -- Bright cyan
     end
-
-    -- Update distance label
-    local label = self:GetNamedChild("Label")
-    if label then
-        label:SetText(distanceText)
+    if glowTexture then
+        glowTexture:SetColor(0, 0.7, 1, 0.4)
     end
 end
 
@@ -263,6 +277,12 @@ local function CreateWaypointArrowControl()
 
     MOverhaul_WaypointArrow:SetHandler("OnUpdate", OnWaypointArrowUpdate)
     MOverhaul_WaypointArrow:SetHidden(not db.questWaypointArrowEnabled)
+
+    -- Try to force refresh quest pins on initial load
+    local pinManager = ZO_WorldMap_GetPinManager()
+    if pinManager and pinManager.RefreshQuestPins then
+        pcall(function() pinManager:RefreshQuestPins() end)
+    end
 end
 
 local MOverhaul_MapQuestLine = nil
