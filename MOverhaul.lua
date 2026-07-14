@@ -258,7 +258,7 @@ local function CreateWaypointArrowControl()
     local arrow = WINDOW_MANAGER:CreateControl("MOverhaul_WaypointArrowTexture", MOverhaul_WaypointArrow, CT_TEXTURE)
     arrow:SetAnchor(CENTER, MOverhaul_WaypointArrow, CENTER, 0, 0)
     arrow:SetDimensions(50, 50)
-    arrow:SetTexture("EsoUI/Art/Buttons/arrow_up.dds")
+    arrow:SetTexture("/esoui/art/miscellaneous/gamepad/arrow_up.dds")
     arrow:SetColor(0, 0.8, 1, 1)
 
     -- Distance text label
