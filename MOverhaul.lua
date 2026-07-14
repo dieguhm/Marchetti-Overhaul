@@ -722,6 +722,36 @@ local function OnAddOnLoaded(event, addonName)
     end
 end
 
+SLASH_COMMANDS["/mo_debugwaypoint"] = function()
+    local px, py = GetMapPlayerPosition("player")
+    local tx, ty = GetMapPlayerWaypoint()
+    local heading = GetPlayerCameraHeading()
+    
+    d("[MOverhaul] Debug Waypoint:")
+    d("Player Pos: " .. tostring(px) .. ", " .. tostring(py))
+    d("Waypoint Pos: " .. tostring(tx) .. ", " .. tostring(ty))
+    d("Camera Heading (rad): " .. tostring(heading))
+    d("Camera Heading (deg): " .. tostring(math.deg(heading)))
+    
+    local dx = tx - px
+    local dy = ty - py
+    local targetAngle = math.atan2(dx, -dy)
+    d("Target Angle (rad): " .. tostring(targetAngle))
+    d("Target Angle (deg): " .. tostring(math.deg(targetAngle)))
+    
+    local relativeAngle = targetAngle - heading
+    d("Relative Angle (rad): " .. tostring(relativeAngle))
+    d("Relative Angle (deg): " .. tostring(math.deg(relativeAngle)))
+    
+    local LibGPS = LibGPS3 or LibGPS2 or LibGPS
+    if LibGPS then
+        local distance = LibGPS:GetLocalDistanceInMeters(px, py, tx, ty)
+        d("LibGPS Distance (m): " .. tostring(distance))
+    else
+        d("LibGPS NOT LOADED")
+    end
+end
+
 SLASH_COMMANDS["/mo_debugmap"] = function()
     local playerX, playerY = GetMapPlayerPosition("player")
     d("[MOverhaul] Player Pos: " .. tostring(playerX) .. ", " .. tostring(playerY))
