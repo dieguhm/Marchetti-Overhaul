@@ -222,9 +222,9 @@ local function OnWaypointArrowUpdate(self, elapsed)
     end
 
     local cameraHeading = GetPlayerCameraHeading()
-    -- Allow dynamic calibration offset, defaulting to 0 degrees since arrow_up.dds points straight North by default.
-    local offset = MOverhaul.db and MOverhaul.db.arrowOffset or 0
-    local relativeAngle = targetAngle - cameraHeading - offset
+    -- Allow dynamic calibration offset, defaulting to 225 degrees (5 * pi / 4) to align the custom arrow.dds texture.
+    local offset = MOverhaul.db and MOverhaul.db.arrowOffset or (5 * math.pi / 4)
+    local relativeAngle = cameraHeading - targetAngle - offset
 
     -- Update texture rotation
     if arrowTexture then
@@ -254,11 +254,11 @@ local function CreateWaypointArrowControl()
     MOverhaul_WaypointArrow:SetMouseEnabled(not db.questWaypointArrowLocked)
     MOverhaul_WaypointArrow:SetClampedToScreen(true)
 
-    -- Arrow texture (Simple native straight arrow pointing UP by default)
+    -- Arrow texture (Simple straight arrow from BanditsUI)
     local arrow = WINDOW_MANAGER:CreateControl("MOverhaul_WaypointArrowTexture", MOverhaul_WaypointArrow, CT_TEXTURE)
     arrow:SetAnchor(CENTER, MOverhaul_WaypointArrow, CENTER, 0, 0)
     arrow:SetDimensions(50, 50)
-    arrow:SetTexture("/esoui/art/miscellaneous/gamepad/arrow_up.dds")
+    arrow:SetTexture("BanditsUserInterface/textures/arrow.dds")
     arrow:SetColor(0, 0.8, 1, 1)
 
     -- Distance text label
@@ -310,7 +310,7 @@ local function UpdateQuest3DArrow(pinX, pinY)
             depthBuffer = true
         })
         if quest3DArrow then
-            quest3DArrow:ChangeColours("00FFFF", "00FFFF") -- Cyan color
+            quest3DArrow:ChangeColours("FFFF00", "FFFF00") -- Yellow color
         end
     end
 
@@ -558,7 +558,6 @@ local function OnAddOnLoaded(event, addonName)
         EVENT_MANAGER:UnregisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED)
         
         MOverhaul.db = ZO_SavedVars:NewAccountWide("MOverhaul_SavedVariables", 1, nil, defaults)
-        MOverhaul.db.arrowOffset = nil -- Reset experimental values for the new math transition
         CreateWaypointArrowControl()
         
         ZO_Dialogs_RegisterCustomDialog("M_OVERHAUL_CONFIRM", {
