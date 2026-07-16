@@ -11,6 +11,10 @@ local defaults = {
     questWaypointArrowLocked = false,
     questWaypointArrowX = nil,
     questWaypointArrowY = nil,
+    questArrowLocked = false,
+    questArrowX = nil,
+    questArrowY = nil,
+    questCoordsCache = {},
 }
 
 local overloadLabel = nil
@@ -160,36 +164,50 @@ local function OnWaypointArrowUpdate(self, elapsed)
     local px, py = GetMapPlayerPosition("player")
 
     if not tx or tx == 0 or not ty or ty == 0 or not px or px == 0 then
-        -- Faded state when no custom waypoint is set
-        self:SetHidden(false)
         if label then
-            label:SetText("Nenhum Destino")
-            label:SetColor(1, 1, 1, 0.5)
+            label:SetText("")
         end
         if arrowTexture then
-            arrowTexture:SetTextureRotation(0)
-            arrowTexture:SetColor(1, 1, 1, 0.2)
+            arrowTexture:SetHidden(true)
         end
         return
     end
 
-    self:SetHidden(false)
+    if arrowTexture then
+        arrowTexture:SetHidden(false)
+    end
 
-    -- 1. Calculate distance in meters
+    -- 1. Calculate distance, angle, and rotation using global coordinates
     local distanceText = ""
+    local targetAngle = 0
+    local converted = false
     local LibGPS = LibGPS3 or LibGPS2 or LibGPS
     if LibGPS then
-        local distance = LibGPS:GetLocalDistanceInMeters(px, py, tx, ty)
-        if distance then
-            -- Scale down LibGPS distance to align with the game's native world scale
-            distance = distance / 2.0
-            if distance > 1000 then
-                distanceText = string.format("%.1f km", distance / 1000)
+        LibGPS:PushCurrentMap()
+        local gpx, gpy = LibGPS:LocalToGlobal(px, py)
+        local gtx, gty = LibGPS:LocalToGlobal(tx, ty)
+        if gpx and gpy and gtx and gty then
+            -- Use global distance in meters to avoid issues when the map is hidden
+            local distance = LibGPS:GetGlobalDistanceInMeters(gpx, gpy, gtx, gty)
+            if distance and distance ~= math.huge and distance == distance then
+                -- Scale down LibGPS distance to align with the game's native world scale
+                distance = distance / 2.0
+                if distance > 1000 then
+                    distanceText = string.format("%.1f km", distance / 1000)
+                else
+                    distanceText = string.format("%d m", math.floor(distance))
+                end
             else
-                distanceText = string.format("%d m", math.floor(distance))
+                -- Fallback to local map scale estimation if global distance fails
+                local distPct = math.sqrt((tx - px)^2 + (ty - py)^2)
+                distanceText = string.format("%.0f%%", distPct * 100)
             end
+            targetAngle = math.atan2(gtx - gpx, gpy - gty)
         end
-    else
+        LibGPS:PopCurrentMap()
+    end
+
+    if distanceText == "" then
         local distPct = math.sqrt((tx - px)^2 + (ty - py)^2)
         distanceText = string.format("%.0f%%", distPct * 100)
     end
@@ -199,32 +217,14 @@ local function OnWaypointArrowUpdate(self, elapsed)
         label:SetColor(1, 1, 1, 1)
     end
 
-    -- 2. Calculate angle and rotation using global coordinates to avoid local map rotation issues
-    local targetAngle = 0
-    local converted = false
-    if LibGPS then
-        LibGPS:PushCurrentMap()
-        local gpx, gpy = LibGPS:LocalToGlobal(px, py)
-        local gtx, gty = LibGPS:LocalToGlobal(tx, ty)
-        LibGPS:PopCurrentMap()
-
-        if gpx and gpy and gtx and gty then
-            -- In global Tamriel coordinates, Y increases downwards, X increases Eastwards.
-            -- This matches the standard compass vector where dx is horizontal and dy is vertical.
-            targetAngle = math.atan2(gtx - gpx, gpy - gty)
-            converted = true
-        end
-    end
-
-    if not converted then
-        -- Fallback to local coordinates if LibGPS conversion fails
-        targetAngle = math.atan2(tx - px, py - ty)
-    end
+    -- 2. Calculate local map angle (100% accurate)
+    local targetAngle = math.atan2(tx - px, py - ty)
 
     local cameraHeading = GetPlayerCameraHeading()
-    -- Allow dynamic calibration offset, defaulting to 225 degrees (5 * pi / 4) to align the custom arrow.dds texture.
-    local offset = MOverhaul.db and MOverhaul.db.arrowOffset or (5 * math.pi / 4)
-    local relativeAngle = cameraHeading - targetAngle - offset
+    local cameraHeadingCw = (math.pi / 2) - cameraHeading
+    -- Default to 0 since transform_arrow.dds points North by default.
+    local offset = MOverhaul.db and MOverhaul.db.arrowOffset or 0
+    local relativeAngle = cameraHeadingCw - targetAngle - offset
 
     -- Update texture rotation
     if arrowTexture then
@@ -254,11 +254,11 @@ local function CreateWaypointArrowControl()
     MOverhaul_WaypointArrow:SetMouseEnabled(not db.questWaypointArrowLocked)
     MOverhaul_WaypointArrow:SetClampedToScreen(true)
 
-    -- Arrow texture (Simple straight arrow from BanditsUI)
+    -- Arrow texture (transform_arrow.dds)
     local arrow = WINDOW_MANAGER:CreateControl("MOverhaul_WaypointArrowTexture", MOverhaul_WaypointArrow, CT_TEXTURE)
     arrow:SetAnchor(CENTER, MOverhaul_WaypointArrow, CENTER, 0, 0)
     arrow:SetDimensions(50, 50)
-    arrow:SetTexture("BanditsUserInterface/textures/arrow.dds")
+    arrow:SetTexture("esoui/art/miscellaneous/transform_arrow.dds")
     arrow:SetColor(0, 0.8, 1, 1)
 
     -- Distance text label
@@ -288,37 +288,347 @@ local function CreateWaypointArrowControl()
     end
 end
 
+local MOverhaul_QuestArrow = nil
+
+local function CreateQuestArrowControl()
+    if MOverhaul_QuestArrow then return end
+
+    local db = MOverhaul.db
+
+    -- Create top level window
+    MOverhaul_QuestArrow = WINDOW_MANAGER:CreateTopLevelWindow("MOverhaul_QuestArrow")
+    MOverhaul_QuestArrow:SetDimensions(80, 80)
+
+    -- Load saved position or use default (center-top shifted to the right)
+    if db.questArrowX and db.questArrowY then
+        MOverhaul_QuestArrow:ClearAnchors()
+        MOverhaul_QuestArrow:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, db.questArrowX, db.questArrowY)
+    else
+        MOverhaul_QuestArrow:ClearAnchors()
+        MOverhaul_QuestArrow:SetAnchor(CENTER, GuiRoot, CENTER, 100, -200)
+    end
+
+    MOverhaul_QuestArrow:SetMovable(not db.questArrowLocked)
+    MOverhaul_QuestArrow:SetMouseEnabled(not db.questArrowLocked)
+    MOverhaul_QuestArrow:SetClampedToScreen(true)
+
+    -- Arrow texture (transform_arrow.dds)
+    local arrow = WINDOW_MANAGER:CreateControl("MOverhaul_QuestArrowTexture", MOverhaul_QuestArrow, CT_TEXTURE)
+    arrow:SetAnchor(CENTER, MOverhaul_QuestArrow, CENTER, 0, 0)
+    arrow:SetDimensions(50, 50)
+    arrow:SetTexture("esoui/art/miscellaneous/transform_arrow.dds")
+    arrow:SetColor(1, 1, 0, 1) -- Yellow
+
+    -- Distance text label
+    local label = WINDOW_MANAGER:CreateControl("MOverhaul_QuestArrowLabel", MOverhaul_QuestArrow, CT_LABEL)
+    label:SetAnchor(TOP, MOverhaul_QuestArrow, BOTTOM, 0, 5)
+    label:SetFont("$(BOLD_FONT)|16|soft-shadow-thin")
+    label:SetColor(1, 1, 1, 1)
+    label:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
+    label:SetText("")
+
+    -- Drag behavior
+    MOverhaul_QuestArrow:SetHandler("OnMoveStop", function(self)
+        local isValidAnchor, point, relativeTo, relativePoint, offsetX, offsetY = self:GetAnchor()
+        if isValidAnchor then
+            db.questArrowX = offsetX
+            db.questArrowY = offsetY
+        end
+    end)
+
+    MOverhaul_QuestArrow:SetHidden(not db.quest3DArrowEnabled)
+end
+
 local MOverhaul_MapQuestLine = nil
 local lastMapUpdate = 0
 local MAP_UPDATE_INTERVAL = 0.05 -- Update 20 times per second
 local lastPlayerMapRefresh = 0
 
-local quest3DArrow = nil
+local function IsWayshrinePin(pin, activePins)
+    if not pin or not activePins then return false end
+    if not pin.GetNormalizedPosition then return false end
+    local pinX, pinY = pin:GetNormalizedPosition()
+    if not pinX or pinX == 0 or not pinY or pinY == 0 then return false end
 
-local function UpdateQuest3DArrow(pinX, pinY)
-    if not Lib3DArrow then return end
+    local wpType1 = MAP_PIN_TYPE_FAST_TRAVEL_WAYSHRINE or 2
+    local wpType2 = MAP_PIN_TYPE_WAYSHRINE or 3
+    local wpType3 = MAP_PIN_TYPE_WAYSHRINE_CAPPED or 4
+    local wpType4 = MAP_PIN_TYPE_FAST_TRAVEL_KEEP or 5
+
+    for pinKey, otherPin in pairs(activePins) do
+        if otherPin ~= pin and (type(otherPin) == "table" or type(otherPin) == "userdata") then
+            if otherPin.GetPinType and otherPin.GetNormalizedPosition then
+                local pinType = otherPin:GetPinType()
+                if pinType == wpType1 or pinType == wpType2 or pinType == wpType3 or pinType == wpType4 then
+                    local wx, wy = otherPin:GetNormalizedPosition()
+                    if wx and wy then
+                        local dist = math.sqrt((pinX - wx)^2 + (pinY - wy)^2)
+                        if dist < 0.005 then
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+local function SetMapToQuestObjective(questIndex)
+    if not questIndex or questIndex <= 0 then return false end
+    local numSteps = GetJournalQuestNumSteps(questIndex) or 1
+    for stepIndex = 1, numSteps do
+        local resultIndex = SetMapToQuestStepEnding(questIndex, stepIndex)
+        if resultIndex == SET_MAP_RESULT_MAP_CHANGED or resultIndex == SET_MAP_RESULT_CURRENT_MAP_UNCHANGED then
+            return true
+        end
+        local numConditions = GetJournalQuestNumConditions(questIndex, stepIndex) or 1
+        for conditionIndex = 1, numConditions do
+            local result = SetMapToQuestCondition(questIndex, stepIndex, conditionIndex)
+            if result == SET_MAP_RESULT_MAP_CHANGED or result == SET_MAP_RESULT_CURRENT_MAP_UNCHANGED then
+                return true
+            end
+        end
+    end
+    local result = SetMapToQuestZone(questIndex)
+    return result == SET_MAP_RESULT_MAP_CHANGED or result == SET_MAP_RESULT_CURRENT_MAP_UNCHANGED
+end
+local function UpdateQuest2DArrow(pinX, pinY, questIndex)
     if not MOverhaul.db or not MOverhaul.db.quest3DArrowEnabled then
-        if quest3DArrow then
-            quest3DArrow:SetTarget(0, 0)
+        if MOverhaul_QuestArrow then
+            MOverhaul_QuestArrow:SetHidden(true)
         end
         return
     end
 
-    if not quest3DArrow then
-        quest3DArrow = Lib3DArrow:CreateArrow({
-            arrowMagnitude = 6,
-            depthBuffer = true
-        })
-        if quest3DArrow then
-            quest3DArrow:ChangeColours("FFFF00", "FFFF00") -- Yellow color
-        end
+    if not MOverhaul_QuestArrow then
+        CreateQuestArrowControl()
     end
 
-    if quest3DArrow then
-        if pinX and pinY and pinX > 0 and pinY > 0 then
-            quest3DArrow:SetTarget(pinX, pinY)
-        else
-            quest3DArrow:SetTarget(0, 0)
+    if not pinX or pinX == 0 or not pinY or pinY == 0 then
+        if MOverhaul_QuestArrow then
+            MOverhaul_QuestArrow:SetHidden(true)
+        end
+        return
+    end
+
+    local px, py = GetMapPlayerPosition("player")
+    if not px or px == 0 then
+        if MOverhaul_QuestArrow then
+            MOverhaul_QuestArrow:SetHidden(true)
+        end
+        return
+    end
+
+    local questName = ""
+    local zoneName = ""
+    if questIndex and questIndex > 0 then
+        questName = GetJournalQuestName(questIndex) or ""
+        zoneName = GetJournalQuestLocationInfo(questIndex) or ""
+    end
+
+    if MOverhaul_QuestArrow then
+        MOverhaul_QuestArrow:SetHidden(false)
+
+        local label = MOverhaul_QuestArrow:GetNamedChild("Label")
+        local arrowTexture = MOverhaul_QuestArrow:GetNamedChild("Texture")
+
+        -- 1. Calculate distance using global coordinates
+        local distanceText = ""
+        local LibGPS = LibGPS3 or LibGPS2 or LibGPS
+        if LibGPS then
+            LibGPS:PushCurrentMap()
+            local gpx, gpy = LibGPS:LocalToGlobal(px, py)
+            
+            local currentMapName = GetMapName()
+            local isDifferentZone = zoneName ~= "" and currentMapName ~= "" and zoneName ~= currentMapName
+            local gtx, gty = nil, nil
+
+            -- Generate a unique key for the current quest state to cache coordinates
+            local uniqueKey = nil
+            if questIndex and questIndex > 0 then
+                local numSteps = GetJournalQuestNumSteps(questIndex) or 0
+                local progressKey = ""
+                for stepIndex = 1, numSteps do
+                    local numConditions = GetJournalQuestNumConditions(questIndex, stepIndex) or 0
+                    for conditionIndex = 1, numConditions do
+                        local conditionText, currentVal, maxVal, isFail, isComplete = GetJournalQuestConditionInfo(questIndex, stepIndex, conditionIndex)
+                        if not isComplete then
+                            progressKey = progressKey .. "_" .. stepIndex .. "_" .. conditionIndex .. "_" .. tostring(currentVal)
+                        end
+                    end
+                end
+                uniqueKey = questName .. progressKey
+            end
+
+            -- Ensure questCoordsCache exists
+            if MOverhaul.db then
+                MOverhaul.db.questCoordsCache = MOverhaul.db.questCoordsCache or {}
+            end
+
+            if not isDifferentZone then
+                -- Same zone (or map showing quest zone), get global coordinates from current pin
+                if pinX and pinX > 0 and pinY and pinY > 0 then
+                    gtx, gty = LibGPS:LocalToGlobal(pinX, pinY)
+                    -- Cache these coordinates as they are correct
+                    if uniqueKey and MOverhaul.db then
+                        MOverhaul.db.questCoordsCache[uniqueKey] = { gtx = gtx, gty = gty }
+                    end
+                end
+            else
+                -- Different zone, retrieve from cache if available
+                local cached = uniqueKey and MOverhaul.db and MOverhaul.db.questCoordsCache[uniqueKey]
+                if cached then
+                    gtx, gty = cached.gtx, cached.gty
+                else
+                    -- Cache miss! Let's do a one-time background map-swap to retrieve and cache the coordinates
+                    local now = GetFrameTimeSeconds()
+                    -- Throttle background swaps to avoid spamming if it fails repeatedly (e.g. 5 seconds)
+                    if not MOverhaul.lastBgSwapTime or (now - MOverhaul.lastBgSwapTime >= 5.0) then
+                        MOverhaul.lastBgSwapTime = now
+                        
+                        -- Fakes to allow background map-swapping and pin rebuilding
+                        local mapHidden = false
+                        if ZO_WorldMap then
+                            mapHidden = ZO_WorldMap:IsHidden()
+                        end
+
+                        local oldIsChangingAllowed = ZO_WorldMap_IsMapChangingAllowed
+                        ZO_WorldMap_IsMapChangingAllowed = function() return true end
+
+                        local oldIsHidden = ZO_WorldMap.IsHidden
+                        ZO_WorldMap.IsHidden = function() return false end
+
+                        local oldIsWorldMapShowing = ZO_WorldMap_IsWorldMapShowing
+                        _G["ZO_WorldMap_IsWorldMapShowing"] = function() return true end
+
+                        if ZO_WorldMap and mapHidden then
+                            ZO_WorldMap:SetHidden(false)
+                        end
+
+                        SetMapToQuestObjective(questIndex)
+
+                        local pinManager = ZO_WorldMap_GetPinManager()
+                        if pinManager and pinManager.RebuildPins then
+                            pcall(function() pinManager:RebuildPins() end)
+                        end
+
+                        local activePins = nil
+                        if pinManager then
+                            if pinManager.GetActiveObjects then
+                                activePins = pinManager:GetActiveObjects()
+                            elseif pinManager.m_Active then
+                                activePins = pinManager.m_Active
+                            end
+                        end
+
+                        local targetPinQuest = nil
+                        if activePins then
+                            for pinKey, pin in pairs(activePins) do
+                                if type(pin) == "table" or type(pin) == "userdata" then
+                                    if pin.GetPinType and pin.GetNormalizedPosition then
+                                        local pinType = pin:GetPinType()
+                                        if pinType >= 10 and pinType <= 17 then
+                                            if not IsWayshrinePin(pin, activePins) then
+                                                targetPinQuest = pin
+                                                break
+                                            end
+                                        elseif pinType >= 19 and pinType <= 26 then
+                                            if not IsWayshrinePin(pin, activePins) then
+                                                if not targetPinQuest or targetPinQuest:GetPinType() > 26 then
+                                                    targetPinQuest = pin
+                                                end
+                                            end
+                                        elseif pinType >= 28 and pinType <= 35 then
+                                            if not IsWayshrinePin(pin, activePins) then
+                                                if not targetPinQuest then
+                                                    targetPinQuest = pin
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+
+                        if targetPinQuest then
+                            local qPinX, qPinY = targetPinQuest:GetNormalizedPosition()
+                            if qPinX and qPinX > 0 and qPinY and qPinY > 0 then
+                                gtx, gty = LibGPS:LocalToGlobal(qPinX, qPinY)
+                                if uniqueKey and MOverhaul.db then
+                                    MOverhaul.db.questCoordsCache[uniqueKey] = { gtx = gtx, gty = gty }
+                                end
+                            end
+                        end
+
+                        -- Restore map to player location
+                        SetMapToPlayerLocation()
+
+                        if ZO_WorldMap and mapHidden then
+                            ZO_WorldMap:SetHidden(true)
+                        end
+
+                        ZO_WorldMap_IsMapChangingAllowed = oldIsChangingAllowed
+                        ZO_WorldMap.IsHidden = oldIsHidden
+                        _G["ZO_WorldMap_IsWorldMapShowing"] = oldIsWorldMapShowing
+
+                        if pinManager and pinManager.RebuildPins then
+                            pcall(function() pinManager:RebuildPins() end)
+                        end
+                    end
+                end
+
+                -- Fallback to local pin coordinates (door/exit) if still not cached
+                if not gtx and pinX and pinX > 0 and pinY and pinY > 0 then
+                    gtx, gty = LibGPS:LocalToGlobal(pinX, pinY)
+                end
+            end
+
+            if gpx and gpy and gtx and gty then
+                local distance = LibGPS:GetGlobalDistanceInMeters(gpx, gpy, gtx, gty)
+                if distance and distance ~= math.huge and distance == distance then
+                    distance = distance / 2.0
+                    if distance > 1000 then
+                        distanceText = string.format("%.1f km", distance / 1000)
+                    else
+                        distanceText = string.format("%d m", math.floor(distance))
+                    end
+                else
+                    local distPct = math.sqrt((pinX - px)^2 + (pinY - py)^2)
+                    distanceText = string.format("%.0f%%", distPct * 100)
+                end
+            end
+            LibGPS:PopCurrentMap()
+        end
+
+        if distanceText == "" then
+            local distPct = math.sqrt((pinX - px)^2 + (pinY - py)^2)
+            distanceText = string.format("%.0f%%", distPct * 100)
+        end
+
+        -- Calculate local map angle (100% accurate for player's current map)
+        local targetAngle = math.atan2(pinX - px, py - pinY)
+
+        local finalText = distanceText
+        if questName ~= "" then
+            finalText = finalText .. "\n|cFFFF00" .. questName .. "|r"
+        end
+        if zoneName ~= "" then
+            finalText = finalText .. "\n|cAAAAAA" .. zoneName .. "|r"
+        end
+
+        if label then
+            label:SetText(finalText)
+            label:SetColor(1, 1, 1, 1)
+        end
+
+        local cameraHeading = GetPlayerCameraHeading()
+        local cameraHeadingCw = (math.pi / 2) - cameraHeading
+        -- Default to 0 since transform_arrow.dds points North by default.
+        local offset = MOverhaul.db and MOverhaul.db.arrowOffset or 0
+        local relativeAngle = cameraHeadingCw - targetAngle - offset
+
+        if arrowTexture then
+            arrowTexture:SetTextureRotation(relativeAngle)
         end
     end
 end
@@ -332,6 +642,10 @@ local function UpdateMapQuestLine()
         if time - lastPlayerMapRefresh >= 1.0 then
             lastPlayerMapRefresh = time
             SetMapToPlayerLocation()
+            local pinManager = ZO_WorldMap_GetPinManager()
+            if pinManager and pinManager.RebuildPins then
+                pcall(function() pinManager:RebuildPins() end)
+            end
         end
     end
 
@@ -358,23 +672,86 @@ local function UpdateMapQuestLine()
 
     local targetPin = nil
     if activePins then
+        -- First pass: look for the actively assisted pin (green glowing tracker pin) that is NOT a wayshrine transit suggestion
         for pinKey, pin in pairs(activePins) do
             if type(pin) == "table" or type(pin) == "userdata" then
                 if pin.GetPinType and pin.GetNormalizedPosition then
                     local pinType = pin:GetPinType()
-                    -- Prioritize assisted quest pins (Block 1: 10 to 17)
                     if pinType >= 10 and pinType <= 17 then
-                        targetPin = pin
-                        break
-                    -- Fall back to tracked secondary quest pins (Block 2: 19 to 26)
-                    elseif pinType >= 19 and pinType <= 26 then
-                        if not targetPin or targetPin:GetPinType() > 26 then
-                            targetPin = pin
+                        if pin.IsAssisted and pin:IsAssisted() then
+                            if not IsWayshrinePin(pin, activePins) then
+                                targetPin = pin
+                                break
+                            end
                         end
-                    -- Fall back to general journal quest pins (Block 3: 28 to 35)
-                    elseif pinType >= 28 and pinType <= 35 then
-                        if not targetPin then
+                    end
+                end
+            end
+        end
+
+        -- Second pass: if no non-wayshrine assisted pin found, look for any assisted pin
+        if not targetPin then
+            for pinKey, pin in pairs(activePins) do
+                if type(pin) == "table" or type(pin) == "userdata" then
+                    if pin.GetPinType and pin.GetNormalizedPosition then
+                        local pinType = pin:GetPinType()
+                        if pinType >= 10 and pinType <= 17 then
+                            if pin.IsAssisted and pin:IsAssisted() then
+                                targetPin = pin
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Third pass: fall back to non-wayshrine generic quest pins
+        if not targetPin then
+            for pinKey, pin in pairs(activePins) do
+                if type(pin) == "table" or type(pin) == "userdata" then
+                    if pin.GetPinType and pin.GetNormalizedPosition then
+                        local pinType = pin:GetPinType()
+                        if pinType >= 10 and pinType <= 17 then
+                            if not IsWayshrinePin(pin, activePins) then
+                                targetPin = pin
+                                break
+                            end
+                        elseif pinType >= 19 and pinType <= 26 then
+                            if not IsWayshrinePin(pin, activePins) then
+                                if not targetPin or targetPin:GetPinType() > 26 then
+                                    targetPin = pin
+                                end
+                            end
+                        elseif pinType >= 28 and pinType <= 35 then
+                            if not IsWayshrinePin(pin, activePins) then
+                                if not targetPin then
+                                    targetPin = pin
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Final pass: fallback to original behavior (any quest pin) if nothing else is found
+        if not targetPin then
+            for pinKey, pin in pairs(activePins) do
+                if type(pin) == "table" or type(pin) == "userdata" then
+                    if pin.GetPinType and pin.GetNormalizedPosition then
+                        local pinType = pin:GetPinType()
+                        if pinType >= 10 and pinType <= 17 then
                             targetPin = pin
+                            break
+                        elseif pinType >= 19 and pinType <= 26 then
+                            if not targetPin or targetPin:GetPinType() > 26 then
+                                targetPin = pin
+                            end
+                        elseif pinType >= 28 and pinType <= 35 then
+                            if not targetPin then
+                                targetPin = pin
+                            end
                         end
                     end
                 end
@@ -383,19 +760,25 @@ local function UpdateMapQuestLine()
     end
 
     local pinX, pinY = 0, 0
+    local questIndex = nil
     if targetPin then
         pinX, pinY = targetPin:GetNormalizedPosition()
         MOverhaul.targetX = pinX
         MOverhaul.targetY = pinY
         MOverhaul.targetPinType = targetPin:GetPinType()
+        if targetPin.GetQuestIndex then
+            questIndex = targetPin:GetQuestIndex()
+        elseif targetPin.m_QuestIndex then
+            questIndex = targetPin.m_QuestIndex
+        end
     else
         MOverhaul.targetX = nil
         MOverhaul.targetY = nil
         MOverhaul.targetPinType = nil
     end
 
-    -- Update 3D Arrow
-    UpdateQuest3DArrow(pinX, pinY)
+    -- Update 2D Quest Arrow
+    UpdateQuest2DArrow(pinX, pinY, questIndex)
 
     -- Draw the 2D Line on the Map
     if not ZO_WorldMap or ZO_WorldMap:IsHidden() or not MOverhaul.db or not MOverhaul.db.questMapLineEnabled or pinX == 0 or pinY == 0 then
@@ -408,7 +791,7 @@ local function UpdateMapQuestLine()
     if not MOverhaul_MapQuestLine then
         MOverhaul_MapQuestLine = WINDOW_MANAGER:CreateControl("MOverhaul_MapQuestLine", ZO_WorldMapContainer, CT_LINE)
         MOverhaul_MapQuestLine:SetThickness(5)
-        MOverhaul_MapQuestLine:SetColor(0.2, 0.8, 1, 0.7) -- Light blue line
+        MOverhaul_MapQuestLine:SetColor(1, 1, 0, 0.7) -- Yellow line to match yellow quest arrow
         MOverhaul_MapQuestLine:SetDrawLevel(2)
     end
 
@@ -559,6 +942,7 @@ local function OnAddOnLoaded(event, addonName)
         
         MOverhaul.db = ZO_SavedVars:NewAccountWide("MOverhaul_SavedVariables", 1, nil, defaults)
         CreateWaypointArrowControl()
+        CreateQuestArrowControl()
         
         ZO_Dialogs_RegisterCustomDialog("M_OVERHAUL_CONFIRM", {
             title = {
@@ -657,16 +1041,30 @@ local function OnAddOnLoaded(event, addonName)
                 },
                 {
                     type = "checkbox",
-                    name = "Quest 3D Arrow (Modulo)",
-                    tooltip = "Habilita ou desabilita a seta 3D na tela apontando para a quest ativa (Requer Lib3D e Lib3DArrow).",
+                    name = "Quest 2D Arrow (Modulo)",
+                    tooltip = "Habilita ou desabilita a seta 2D amarela no HUD apontando para a quest ativa.",
                     getFunc = function() return MOverhaul.db.quest3DArrowEnabled end,
                     setFunc = function(value) 
                         MOverhaul.db.quest3DArrowEnabled = value 
-                        if not value and quest3DArrow then
-                            quest3DArrow:SetTarget(0, 0)
+                        if MOverhaul_QuestArrow then
+                            MOverhaul_QuestArrow:SetHidden(not value)
                         end
                     end,
                     default = true,
+                },
+                {
+                    type = "checkbox",
+                    name = "Bloquear Seta de Quest",
+                    tooltip = "Bloqueia a movimentacao da seta de quest 2D no HUD para evitar arrastes acidentais.",
+                    getFunc = function() return MOverhaul.db.questArrowLocked end,
+                    setFunc = function(value) 
+                        MOverhaul.db.questArrowLocked = value 
+                        if MOverhaul_QuestArrow then
+                            MOverhaul_QuestArrow:SetMovable(not value)
+                            MOverhaul_QuestArrow:SetMouseEnabled(not value)
+                        end
+                    end,
+                    default = false,
                 },
                 {
                     type = "checkbox",
@@ -730,6 +1128,50 @@ local function OnAddOnLoaded(event, addonName)
             UpdateMapQuestLine()
         end)
 
+        -- Register Quest Journal keybind strip button
+        MOverhaul.gpsQuestKeybind = {
+            alignment = KEYBIND_STRIP_ALIGN_CENTER,
+            {
+                name = function()
+                    if MOverhaul.db and MOverhaul.db.quest3DArrowEnabled then
+                        return "GPS Quest: Ativo"
+                    else
+                        return "GPS Quest: Inativo"
+                    end
+                end,
+                keybind = "UI_SHORTCUT_QUATERNARY",
+                callback = function()
+                    MOverhaul.db.quest3DArrowEnabled = not MOverhaul.db.quest3DArrowEnabled
+                    KEYBIND_STRIP:UpdateKeybindButtonGroup(MOverhaul.gpsQuestKeybind)
+                    PlaySound(SOUNDS.DEFAULT_CLICK)
+                    if MOverhaul.db.quest3DArrowEnabled then
+                        d("[MOverhaul] Seta 2D da Quest ATIVADA.")
+                        if MOverhaul_QuestArrow then
+                            MOverhaul_QuestArrow:SetHidden(false)
+                        end
+                    else
+                        d("[MOverhaul] Seta 2D da Quest DESATIVADA.")
+                        if MOverhaul_QuestArrow then
+                            MOverhaul_QuestArrow:SetHidden(true)
+                        end
+                    end
+                end,
+                visible = function()
+                    return true
+                end,
+            }
+        }
+
+        if QUEST_JOURNAL_SCENE then
+            QUEST_JOURNAL_SCENE:RegisterCallback("StateChange", function(oldState, newState)
+                if newState == SCENE_SHOWING then
+                    KEYBIND_STRIP:AddKeybindButtonGroup(MOverhaul.gpsQuestKeybind)
+                elseif newState == SCENE_HIDING then
+                    KEYBIND_STRIP:RemoveKeybindButtonGroup(MOverhaul.gpsQuestKeybind)
+                end
+            end)
+        end
+
     end
 end
 
@@ -769,7 +1211,7 @@ SLASH_COMMANDS["/mo_offset"] = function(extra)
         MOverhaul.db.arrowOffset = math.rad(num)
         d("[MOverhaul] Deslocamento da seta definido para " .. tostring(num) .. " graus.")
     else
-        local current = MOverhaul.db.arrowOffset or (5 * math.pi / 4)
+        local current = MOverhaul.db.arrowOffset or (3 * math.pi / 2)
         d("[MOverhaul] Deslocamento atual: " .. tostring(math.floor(math.deg(current) + 0.5)) .. " graus. Use: /mo_offset <graus>")
     end
 end
