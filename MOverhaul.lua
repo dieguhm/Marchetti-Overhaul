@@ -19,6 +19,63 @@ local defaults = {
 
 local overloadLabel = nil
 
+local ASSISTED_QUEST_PIN_TYPES = {}
+local NORMAL_QUEST_PIN_TYPES = {}
+
+local function InitializeQuestPinTypes()
+    ASSISTED_QUEST_PIN_TYPES = {}
+    NORMAL_QUEST_PIN_TYPES = {}
+    
+    local questKeys = {
+        "MAP_PIN_TYPE_QUEST_CONDITION",
+        "MAP_PIN_TYPE_QUEST_ENDING",
+        "MAP_PIN_TYPE_QUEST_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_QUEST_OPTIONAL_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_OPTIONAL_ENDING",
+        
+        "MAP_PIN_TYPE_QUEST_ZONE_STORY_CONDITION",
+        "MAP_PIN_TYPE_QUEST_ZONE_STORY_ENDING",
+        "MAP_PIN_TYPE_QUEST_ZONE_STORY_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_QUEST_ZONE_STORY_OPTIONAL_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_STORY_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_STORY_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_STORY_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_STORY_OPTIONAL_ENDING",
+
+        "MAP_PIN_TYPE_REPEATABLE_QUEST_CONDITION",
+        "MAP_PIN_TYPE_REPEATABLE_QUEST_ENDING",
+        "MAP_PIN_TYPE_REPEATABLE_QUEST_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_REPEATABLE_QUEST_OPTIONAL_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_OPTIONAL_ENDING",
+
+        "MAP_PIN_TYPE_REPEATABLE_QUEST_ZONE_STORY_CONDITION",
+        "MAP_PIN_TYPE_REPEATABLE_QUEST_ZONE_STORY_ENDING",
+        "MAP_PIN_TYPE_REPEATABLE_QUEST_ZONE_STORY_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_REPEATABLE_QUEST_ZONE_STORY_OPTIONAL_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ZONE_STORY_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ZONE_STORY_ENDING",
+        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ZONE_STORY_OPTIONAL_CONDITION",
+        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ZONE_STORY_OPTIONAL_ENDING",
+    }
+    
+    for _, key in ipairs(questKeys) do
+        local value = _G[key]
+        if type(value) == "number" then
+            if string.find(key, "ASSISTED") then
+                ASSISTED_QUEST_PIN_TYPES[value] = true
+            else
+                NORMAL_QUEST_PIN_TYPES[value] = true
+            end
+        end
+    end
+end
+
 local function GetUltimateButtonControl()
     -- 1. Try ACTION_BAR.actionButtons
     if ACTION_BAR and ACTION_BAR.actionButtons then
@@ -150,6 +207,47 @@ function MOverhaul.UpdateOverloadState()
 end
 
 local MOverhaul_WaypointArrow = nil
+local MOverhaul_QuestArrow = nil
+local questArrowFragment = nil
+local waypointArrowFragment = nil
+
+local function UpdateQuestArrowFragmentVisibility()
+    if not MOverhaul_QuestArrow then return end
+    if not questArrowFragment then
+        questArrowFragment = ZO_HUDFadeSceneFragment:New(MOverhaul_QuestArrow)
+    end
+    if MOverhaul.db and MOverhaul.db.quest3DArrowEnabled then
+        if not HUD_SCENE:HasFragment(questArrowFragment) then
+            HUD_SCENE:AddFragment(questArrowFragment)
+            HUD_UI_SCENE:AddFragment(questArrowFragment)
+        end
+    else
+        if HUD_SCENE:HasFragment(questArrowFragment) then
+            HUD_SCENE:RemoveFragment(questArrowFragment)
+            HUD_UI_SCENE:RemoveFragment(questArrowFragment)
+        end
+        MOverhaul_QuestArrow:SetHidden(true)
+    end
+end
+
+local function UpdateWaypointArrowFragmentVisibility()
+    if not MOverhaul_WaypointArrow then return end
+    if not waypointArrowFragment then
+        waypointArrowFragment = ZO_HUDFadeSceneFragment:New(MOverhaul_WaypointArrow)
+    end
+    if MOverhaul.db and MOverhaul.db.questWaypointArrowEnabled then
+        if not HUD_SCENE:HasFragment(waypointArrowFragment) then
+            HUD_SCENE:AddFragment(waypointArrowFragment)
+            HUD_UI_SCENE:AddFragment(waypointArrowFragment)
+        end
+    else
+        if HUD_SCENE:HasFragment(waypointArrowFragment) then
+            HUD_SCENE:RemoveFragment(waypointArrowFragment)
+            HUD_UI_SCENE:RemoveFragment(waypointArrowFragment)
+        end
+        MOverhaul_WaypointArrow:SetHidden(true)
+    end
+end
 
 local function OnWaypointArrowUpdate(self, elapsed)
     if not MOverhaul.db or not MOverhaul.db.questWaypointArrowEnabled then
@@ -271,11 +369,8 @@ local function CreateWaypointArrowControl()
 
     -- Drag behavior
     MOverhaul_WaypointArrow:SetHandler("OnMoveStop", function(self)
-        local isValidAnchor, point, relativeTo, relativePoint, offsetX, offsetY = self:GetAnchor()
-        if isValidAnchor then
-            db.questWaypointArrowX = offsetX
-            db.questWaypointArrowY = offsetY
-        end
+        db.questWaypointArrowX = self:GetLeft()
+        db.questWaypointArrowY = self:GetTop()
     end)
 
     MOverhaul_WaypointArrow:SetHandler("OnUpdate", OnWaypointArrowUpdate)
@@ -287,8 +382,6 @@ local function CreateWaypointArrowControl()
         pcall(function() pinManager:RefreshQuestPins() end)
     end
 end
-
-local MOverhaul_QuestArrow = nil
 
 local function CreateQuestArrowControl()
     if MOverhaul_QuestArrow then return end
@@ -329,14 +422,10 @@ local function CreateQuestArrowControl()
 
     -- Drag behavior
     MOverhaul_QuestArrow:SetHandler("OnMoveStop", function(self)
-        local isValidAnchor, point, relativeTo, relativePoint, offsetX, offsetY = self:GetAnchor()
-        if isValidAnchor then
-            db.questArrowX = offsetX
-            db.questArrowY = offsetY
-        end
+        db.questArrowX = self:GetLeft()
+        db.questArrowY = self:GetTop()
     end)
 
-    MOverhaul_QuestArrow:SetHidden(not db.quest3DArrowEnabled)
 end
 
 local MOverhaul_MapQuestLine = nil
@@ -392,19 +481,79 @@ local function SetMapToQuestObjective(questIndex)
     local result = SetMapToQuestZone(questIndex)
     return result == SET_MAP_RESULT_MAP_CHANGED or result == SET_MAP_RESULT_CURRENT_MAP_UNCHANGED
 end
+
+local QUEST_TYPE_MAIN_STORY = QUEST_TYPE_MAIN_STORY or 1
+local QUEST_TYPE_GUILD = QUEST_TYPE_GUILD or 2
+local QUEST_TYPE_CRAFTING = QUEST_TYPE_CRAFTING or 3
+local QUEST_TYPE_DUNGEON = QUEST_TYPE_DUNGEON or 4
+local QUEST_TYPE_ZONE_STORY = QUEST_TYPE_ZONE_STORY or 5
+local QUEST_TYPE_HOLIDAY_EVENT = QUEST_TYPE_HOLIDAY_EVENT or 9
+local QUEST_TYPE_PROLOGUE = QUEST_TYPE_PROLOGUE or 11
+
+local INSTANCE_DISPLAY_TYPE_DUNGEON = INSTANCE_DISPLAY_TYPE_DUNGEON or 2
+local INSTANCE_DISPLAY_TYPE_GROUP_AREA = INSTANCE_DISPLAY_TYPE_GROUP_AREA or 3
+local INSTANCE_DISPLAY_TYPE_RAID = INSTANCE_DISPLAY_TYPE_RAID or 4
+
+local function GetQuestIconPath(questIndex)
+    if not questIndex or questIndex <= 0 then return nil end
+
+    local questType = GetJournalQuestType and GetJournalQuestType(questIndex)
+    local instanceDisplayType = GetJournalQuestInstanceDisplayType and GetJournalQuestInstanceDisplayType(questIndex)
+    
+    local _, _, _, _, _, _, _, _, _, _, _, isDaily, isRepeatable = GetJournalQuestInfo(questIndex)
+    local isRepeat = isDaily or isRepeatable
+    
+    if instanceDisplayType == INSTANCE_DISPLAY_TYPE_DUNGEON or instanceDisplayType == INSTANCE_DISPLAY_TYPE_GROUP_AREA then
+        return "esoui/art/journal/journal_quest_dungeon.dds"
+    elseif instanceDisplayType == INSTANCE_DISPLAY_TYPE_RAID then
+        return "esoui/art/journal/journal_quest_raid.dds"
+    end
+    
+    if questType == QUEST_TYPE_MAIN_STORY then
+        return "esoui/art/journal/journal_quest_mainstory.dds"
+    elseif questType == QUEST_TYPE_GUILD then
+        return "esoui/art/journal/journal_quest_guild.dds"
+    elseif questType == QUEST_TYPE_CRAFTING then
+        return "esoui/art/journal/journal_quest_crafting.dds"
+    elseif questType == QUEST_TYPE_DUNGEON then
+        return "esoui/art/journal/journal_quest_dungeon.dds"
+    elseif questType == QUEST_TYPE_ZONE_STORY then
+        return "esoui/art/journal/journal_quest_zone_story.dds"
+    elseif questType == QUEST_TYPE_HOLIDAY_EVENT then
+        return "esoui/art/journal/journal_quest_holiday.dds"
+    elseif questType == QUEST_TYPE_PROLOGUE then
+        return "esoui/art/journal/journal_quest_prologue.dds"
+    end
+    
+    if isRepeat then
+        return "esoui/art/journal/journal_quest_repeat.dds"
+    end
+    
+    return "esoui/art/journal/journal_quest_sidequest.dds"
+end
+
 local function UpdateQuest2DArrow(pinX, pinY, questIndex)
-    if not MOverhaul.db or not MOverhaul.db.quest3DArrowEnabled then
+    if not MOverhaul_QuestArrow then
+        CreateQuestArrowControl()
+    end
+
+    -- If the HUD scene fragment is not active (e.g. player is in menus/map), hide and return
+    if questArrowFragment and not questArrowFragment:IsShowing() then
         if MOverhaul_QuestArrow then
             MOverhaul_QuestArrow:SetHidden(true)
         end
         return
     end
 
-    if not MOverhaul_QuestArrow then
-        CreateQuestArrowControl()
+    local questName = ""
+    local zoneName = ""
+    if questIndex and questIndex > 0 then
+        questName = GetJournalQuestName(questIndex) or ""
+        zoneName = GetJournalQuestLocationInfo(questIndex) or ""
     end
 
-    if not pinX or pinX == 0 or not pinY or pinY == 0 then
+    -- If we don't have a valid quest index, hide everything and return
+    if not questIndex or questIndex <= 0 then
         if MOverhaul_QuestArrow then
             MOverhaul_QuestArrow:SetHidden(true)
         end
@@ -419,128 +568,72 @@ local function UpdateQuest2DArrow(pinX, pinY, questIndex)
         return
     end
 
-    local questName = ""
-    local zoneName = ""
-    if questIndex and questIndex > 0 then
-        questName = GetJournalQuestName(questIndex) or ""
-        zoneName = GetJournalQuestLocationInfo(questIndex) or ""
-    end
-
     if MOverhaul_QuestArrow then
         MOverhaul_QuestArrow:SetHidden(false)
+    end
 
-        local label = MOverhaul_QuestArrow:GetNamedChild("Label")
-        local arrowTexture = MOverhaul_QuestArrow:GetNamedChild("Texture")
+    local label = MOverhaul_QuestArrow:GetNamedChild("Label")
+    local arrowTexture = MOverhaul_QuestArrow:GetNamedChild("Texture")
 
-        -- 1. Calculate distance using global coordinates
-        local distanceText = ""
-        local LibGPS = LibGPS3 or LibGPS2 or LibGPS
-        if LibGPS then
-            LibGPS:PushCurrentMap()
-            local gpx, gpy = LibGPS:LocalToGlobal(px, py)
-            
-            local currentMapName = GetMapName()
-            local isDifferentZone = zoneName ~= "" and currentMapName ~= "" and zoneName ~= currentMapName
-            local gtx, gty = nil, nil
+    local distanceText = ""
+    local targetAngle = 0
+    local hasTargetCoords = false
 
-            -- Generate a unique key for the current quest state to cache coordinates
-            local uniqueKey = nil
-            if questIndex and questIndex > 0 then
-                local numSteps = GetJournalQuestNumSteps(questIndex) or 0
-                local progressKey = ""
-                for stepIndex = 1, numSteps do
-                    local numConditions = GetJournalQuestNumConditions(questIndex, stepIndex) or 0
-                    for conditionIndex = 1, numConditions do
-                        local conditionText, currentVal, maxVal, isFail, isComplete = GetJournalQuestConditionInfo(questIndex, stepIndex, conditionIndex)
-                        if not isComplete then
-                            progressKey = progressKey .. "_" .. stepIndex .. "_" .. conditionIndex .. "_" .. tostring(currentVal)
+    local LibGPS = LibGPS3 or LibGPS2 or LibGPS
+    if LibGPS then
+        LibGPS:PushCurrentMap()
+        local gpx, gpy = LibGPS:LocalToGlobal(px, py)
+        local gtx, gty = nil, nil
+
+        local uniqueKey = string.format("%d_%s", questIndex, questName)
+        if MOverhaul.db and MOverhaul.db.questCoordsCache and MOverhaul.db.questCoordsCache[uniqueKey] then
+            gtx = MOverhaul.db.questCoordsCache[uniqueKey].gtx
+            gty = MOverhaul.db.questCoordsCache[uniqueKey].gty
+        else
+            -- Try to find target pin by switching map to quest zone temporarily
+            local oldIsHidden = ZO_WorldMap.IsHidden
+            local oldIsWorldMapShowing = _G["ZO_WorldMap_IsWorldMapShowing"]
+            local oldIsChangingAllowed = ZO_WorldMap_IsMapChangingAllowed
+
+            ZO_WorldMap.IsHidden = function() return false end
+            _G["ZO_WorldMap_IsWorldMapShowing"] = function() return true end
+            ZO_WorldMap_IsMapChangingAllowed = function() return true end
+
+            local success, err = pcall(function()
+                local mapHidden = ZO_WorldMap:IsHidden()
+                if mapHidden then
+                    ZO_WorldMap:SetHidden(false)
+                end
+
+                local wasZoneMapSet = SetMapToQuestObjective(questIndex)
+                if wasZoneMapSet then
+                    local pinManager = ZO_WorldMap_GetPinManager()
+                    if pinManager and pinManager.RebuildPins then
+                        pcall(function() pinManager:RebuildPins() end)
+                    end
+
+                    local activePins = nil
+                    if pinManager then
+                        if pinManager.GetActiveObjects then
+                            activePins = pinManager:GetActiveObjects()
+                        elseif pinManager.m_Active then
+                            activePins = pinManager.m_Active
                         end
                     end
-                end
-                uniqueKey = questName .. progressKey
-            end
 
-            -- Ensure questCoordsCache exists
-            if MOverhaul.db then
-                MOverhaul.db.questCoordsCache = MOverhaul.db.questCoordsCache or {}
-            end
-
-            if not isDifferentZone then
-                -- Same zone (or map showing quest zone), get global coordinates from current pin
-                if pinX and pinX > 0 and pinY and pinY > 0 then
-                    gtx, gty = LibGPS:LocalToGlobal(pinX, pinY)
-                    -- Cache these coordinates as they are correct
-                    if uniqueKey and MOverhaul.db then
-                        MOverhaul.db.questCoordsCache[uniqueKey] = { gtx = gtx, gty = gty }
-                    end
-                end
-            else
-                -- Different zone, retrieve from cache if available
-                local cached = uniqueKey and MOverhaul.db and MOverhaul.db.questCoordsCache[uniqueKey]
-                if cached then
-                    gtx, gty = cached.gtx, cached.gty
-                else
-                    -- Cache miss! Let's do a one-time background map-swap to retrieve and cache the coordinates
-                    local now = GetFrameTimeSeconds()
-                    -- Throttle background swaps to avoid spamming if it fails repeatedly (e.g. 5 seconds)
-                    if not MOverhaul.lastBgSwapTime or (now - MOverhaul.lastBgSwapTime >= 5.0) then
-                        MOverhaul.lastBgSwapTime = now
-                        
-                        -- Fakes to allow background map-swapping and pin rebuilding
-                        local mapHidden = false
-                        if ZO_WorldMap then
-                            mapHidden = ZO_WorldMap:IsHidden()
-                        end
-
-                        local oldIsChangingAllowed = ZO_WorldMap_IsMapChangingAllowed
-                        ZO_WorldMap_IsMapChangingAllowed = function() return true end
-
-                        local oldIsHidden = ZO_WorldMap.IsHidden
-                        ZO_WorldMap.IsHidden = function() return false end
-
-                        local oldIsWorldMapShowing = ZO_WorldMap_IsWorldMapShowing
-                        _G["ZO_WorldMap_IsWorldMapShowing"] = function() return true end
-
-                        if ZO_WorldMap and mapHidden then
-                            ZO_WorldMap:SetHidden(false)
-                        end
-
-                        SetMapToQuestObjective(questIndex)
-
-                        local pinManager = ZO_WorldMap_GetPinManager()
-                        if pinManager and pinManager.RebuildPins then
-                            pcall(function() pinManager:RebuildPins() end)
-                        end
-
-                        local activePins = nil
-                        if pinManager then
-                            if pinManager.GetActiveObjects then
-                                activePins = pinManager:GetActiveObjects()
-                            elseif pinManager.m_Active then
-                                activePins = pinManager.m_Active
-                            end
-                        end
-
-                        local targetPinQuest = nil
-                        if activePins then
-                            for pinKey, pin in pairs(activePins) do
-                                if type(pin) == "table" or type(pin) == "userdata" then
-                                    if pin.GetPinType and pin.GetNormalizedPosition then
-                                        local pinType = pin:GetPinType()
-                                        if pinType >= 10 and pinType <= 17 then
-                                            if not IsWayshrinePin(pin, activePins) then
+                    local targetPinQuest = nil
+                    if activePins then
+                        for pinKey, pin in pairs(activePins) do
+                            if type(pin) == "table" or type(pin) == "userdata" then
+                                if pin.GetPinType and pin.GetNormalizedPosition then
+                                    local pinType = pin:GetPinType()
+                                    if ASSISTED_QUEST_PIN_TYPES[pinType] or NORMAL_QUEST_PIN_TYPES[pinType] then
+                                        if not IsWayshrinePin(pin, activePins) then
+                                            if ASSISTED_QUEST_PIN_TYPES[pinType] then
                                                 targetPinQuest = pin
                                                 break
-                                            end
-                                        elseif pinType >= 19 and pinType <= 26 then
-                                            if not IsWayshrinePin(pin, activePins) then
-                                                if not targetPinQuest or targetPinQuest:GetPinType() > 26 then
-                                                    targetPinQuest = pin
-                                                end
-                                            end
-                                        elseif pinType >= 28 and pinType <= 35 then
-                                            if not IsWayshrinePin(pin, activePins) then
-                                                if not targetPinQuest then
+                                            else
+                                                if not targetPinQuest or ASSISTED_QUEST_PIN_TYPES[targetPinQuest:GetPinType()] == nil then
                                                     targetPinQuest = pin
                                                 end
                                             end
@@ -549,81 +642,113 @@ local function UpdateQuest2DArrow(pinX, pinY, questIndex)
                                 end
                             end
                         end
+                    end
 
-                        if targetPinQuest then
-                            local qPinX, qPinY = targetPinQuest:GetNormalizedPosition()
-                            if qPinX and qPinX > 0 and qPinY and qPinY > 0 then
-                                gtx, gty = LibGPS:LocalToGlobal(qPinX, qPinY)
-                                if uniqueKey and MOverhaul.db then
-                                    MOverhaul.db.questCoordsCache[uniqueKey] = { gtx = gtx, gty = gty }
-                                end
+                    if targetPinQuest then
+                        local qPinX, qPinY = targetPinQuest:GetNormalizedPosition()
+                        if qPinX and qPinX > 0 and qPinY and qPinY > 0 then
+                            gtx, gty = LibGPS:LocalToGlobal(qPinX, qPinY)
+                            if uniqueKey and MOverhaul.db then
+                                MOverhaul.db.questCoordsCache[uniqueKey] = { gtx = gtx, gty = gty }
                             end
                         end
+                    end
 
-                        -- Restore map to player location
-                        SetMapToPlayerLocation()
+                    -- Restore map to player location
+                    SetMapToPlayerLocation()
 
-                        if ZO_WorldMap and mapHidden then
-                            ZO_WorldMap:SetHidden(true)
-                        end
+                    if ZO_WorldMap and mapHidden then
+                        ZO_WorldMap:SetHidden(true)
+                    end
 
-                        ZO_WorldMap_IsMapChangingAllowed = oldIsChangingAllowed
-                        ZO_WorldMap.IsHidden = oldIsHidden
-                        _G["ZO_WorldMap_IsWorldMapShowing"] = oldIsWorldMapShowing
-
-                        if pinManager and pinManager.RebuildPins then
-                            pcall(function() pinManager:RebuildPins() end)
-                        end
+                    if pinManager and pinManager.RebuildPins then
+                        pcall(function() pinManager:RebuildPins() end)
                     end
                 end
+            end)
 
-                -- Fallback to local pin coordinates (door/exit) if still not cached
-                if not gtx and pinX and pinX > 0 and pinY and pinY > 0 then
-                    gtx, gty = LibGPS:LocalToGlobal(pinX, pinY)
-                end
-            end
+            -- ALWAYS restore native map functions, regardless of wasZoneMapSet result or pcall errors
+            ZO_WorldMap_IsMapChangingAllowed = oldIsChangingAllowed
+            ZO_WorldMap.IsHidden = oldIsHidden
+            _G["ZO_WorldMap_IsWorldMapShowing"] = oldIsWorldMapShowing
 
-            if gpx and gpy and gtx and gty then
-                local distance = LibGPS:GetGlobalDistanceInMeters(gpx, gpy, gtx, gty)
-                if distance and distance ~= math.huge and distance == distance then
-                    distance = distance / 2.0
-                    if distance > 1000 then
-                        distanceText = string.format("%.1f km", distance / 1000)
-                    else
-                        distanceText = string.format("%d m", math.floor(distance))
-                    end
-                else
-                    local distPct = math.sqrt((pinX - px)^2 + (pinY - py)^2)
-                    distanceText = string.format("%.0f%%", distPct * 100)
-                end
-            end
-            LibGPS:PopCurrentMap()
+            -- Force reset map to player location in case anything failed during the map-swap
+            pcall(function() SetMapToPlayerLocation() end)
         end
 
+        -- Fallback to local pin coordinates if still not cached
+        local hasCoords = pinX and pinX > 0 and pinY and pinY > 0
+        if not gtx and hasCoords then
+            gtx, gty = LibGPS:LocalToGlobal(pinX, pinY)
+        end
+
+        if gpx and gpy and gtx and gty then
+            local distance = LibGPS:GetGlobalDistanceInMeters(gpx, gpy, gtx, gty)
+            if distance and distance ~= math.huge and distance == distance then
+                distance = distance / 2.0
+                if distance > 1000 then
+                    distanceText = string.format("%.1f km", distance / 1000)
+                else
+                    distanceText = string.format("%d m", math.floor(distance))
+                end
+                
+                -- Calculate target angle in global Tamriel coords
+                targetAngle = math.atan2(gtx - gpx, gty - gpy)
+                hasTargetCoords = true
+            end
+        end
+        LibGPS:PopCurrentMap()
+    end
+
+    -- Fallback to local map coordinates if global calculations weren't possible
+    local hasLocalCoords = pinX and pinX > 0 and pinY and pinY > 0
+    if not hasTargetCoords and hasLocalCoords then
         if distanceText == "" then
             local distPct = math.sqrt((pinX - px)^2 + (pinY - py)^2)
             distanceText = string.format("%.0f%%", distPct * 100)
         end
+        targetAngle = math.atan2(pinX - px, py - pinY)
+        hasTargetCoords = true
+    end
 
-        -- Calculate local map angle (100% accurate for player's current map)
-        local targetAngle = math.atan2(pinX - px, py - pinY)
+    -- Control arrow visibility dynamically based on target coordinate availability
+    if arrowTexture then
+        arrowTexture:SetHidden(not hasTargetCoords)
+    end
 
-        local finalText = distanceText
-        if questName ~= "" then
-            finalText = finalText .. "\n|cFFFF00" .. questName .. "|r"
+    local finalText = distanceText
+    if questName ~= "" then
+        local icon = GetQuestIconPath(questIndex)
+        if icon and icon ~= "" then
+            if finalText ~= "" then
+                finalText = finalText .. "\n|t18:18:" .. icon .. "|t |cFFFF00" .. questName .. "|r"
+            else
+                finalText = "|t18:18:" .. icon .. "|t |cFFFF00" .. questName .. "|r"
+            end
+        else
+            if finalText ~= "" then
+                finalText = finalText .. "\n|cFFFF00" .. questName .. "|r"
+            else
+                finalText = "|cFFFF00" .. questName .. "|r"
+            end
         end
-        if zoneName ~= "" then
+    end
+    if zoneName ~= "" then
+        if finalText ~= "" then
             finalText = finalText .. "\n|cAAAAAA" .. zoneName .. "|r"
+        else
+            finalText = "|cAAAAAA" .. zoneName .. "|r"
         end
+    end
 
-        if label then
-            label:SetText(finalText)
-            label:SetColor(1, 1, 1, 1)
-        end
+    if label then
+        label:SetText(finalText)
+        label:SetColor(1, 1, 1, 1)
+    end
 
+    if hasTargetCoords then
         local cameraHeading = GetPlayerCameraHeading()
         local cameraHeadingCw = (math.pi / 2) - cameraHeading
-        -- Default to 0 since transform_arrow.dds points North by default.
         local offset = MOverhaul.db and MOverhaul.db.arrowOffset or 0
         local relativeAngle = cameraHeadingCw - targetAngle - offset
 
@@ -637,6 +762,18 @@ local function UpdateMapQuestLine()
     local time = GetFrameTimeSeconds()
     if time - lastMapUpdate < MAP_UPDATE_INTERVAL then return end
     lastMapUpdate = time
+
+    local assistedQuestIndex = QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER:GetFocusedQuestIndex() or nil
+    
+    -- Detect if focused quest changed to force rebuilding map pins immediately
+    if assistedQuestIndex ~= MOverhaul.lastTrackedQuestIndex then
+        MOverhaul.lastTrackedQuestIndex = assistedQuestIndex
+        SetMapToPlayerLocation()
+        local pinManager = ZO_WorldMap_GetPinManager()
+        if pinManager and pinManager.RebuildPins then
+            pcall(function() pinManager:RebuildPins() end)
+        end
+    end
 
     if not ZO_WorldMap or ZO_WorldMap:IsHidden() then
         if time - lastPlayerMapRefresh >= 1.0 then
@@ -672,85 +809,142 @@ local function UpdateMapQuestLine()
 
     local targetPin = nil
     if activePins then
-        -- First pass: look for the actively assisted pin (green glowing tracker pin) that is NOT a wayshrine transit suggestion
-        for pinKey, pin in pairs(activePins) do
-            if type(pin) == "table" or type(pin) == "userdata" then
-                if pin.GetPinType and pin.GetNormalizedPosition then
-                    local pinType = pin:GetPinType()
-                    if pinType >= 10 and pinType <= 17 then
-                        if pin.IsAssisted and pin:IsAssisted() then
-                            if not IsWayshrinePin(pin, activePins) then
-                                targetPin = pin
-                                break
+        if assistedQuestIndex and assistedQuestIndex > 0 then
+            -- 1. If we have an active focused quest, ONLY scan for pins belonging to this quest
+            -- First pass: look for actively assisted pin (green) that is not a wayshrine
+            for pinKey, pin in pairs(activePins) do
+                if type(pin) == "table" or type(pin) == "userdata" then
+                    if pin.GetPinType and pin.GetNormalizedPosition then
+                        local pinQuestIndex = pin.GetQuestIndex and pin:GetQuestIndex() or pin.m_QuestIndex
+                        if pinQuestIndex == assistedQuestIndex then
+                            local pinType = pin:GetPinType()
+                            if ASSISTED_QUEST_PIN_TYPES[pinType] then
+                                if pin.IsAssisted and pin:IsAssisted() then
+                                    if not IsWayshrinePin(pin, activePins) then
+                                        targetPin = pin
+                                        break
+                                    end
+                                end
                             end
                         end
                     end
                 end
             end
-        end
 
-        -- Second pass: if no non-wayshrine assisted pin found, look for any assisted pin
-        if not targetPin then
+            -- Second pass: look for any assisted pin belonging to the focused quest
+            if not targetPin then
+                for pinKey, pin in pairs(activePins) do
+                    if type(pin) == "table" or type(pin) == "userdata" then
+                        if pin.GetPinType and pin.GetNormalizedPosition then
+                            local pinQuestIndex = pin.GetQuestIndex and pin:GetQuestIndex() or pin.m_QuestIndex
+                            if pinQuestIndex == assistedQuestIndex then
+                                local pinType = pin:GetPinType()
+                                if ASSISTED_QUEST_PIN_TYPES[pinType] then
+                                    if pin.IsAssisted and pin:IsAssisted() then
+                                        targetPin = pin
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- Third pass: look for any quest pin (including non-assisted and wayshrines) of the focused quest
+            if not targetPin then
+                for pinKey, pin in pairs(activePins) do
+                    if type(pin) == "table" or type(pin) == "userdata" then
+                        if pin.GetPinType and pin.GetNormalizedPosition then
+                            local pinQuestIndex = pin.GetQuestIndex and pin:GetQuestIndex() or pin.m_QuestIndex
+                            if pinQuestIndex == assistedQuestIndex then
+                                local pinType = pin:GetPinType()
+                                if ASSISTED_QUEST_PIN_TYPES[pinType] or NORMAL_QUEST_PIN_TYPES[pinType] then
+                                    -- For the focused quest, accept even wayshrines if it's the only pin on the map
+                                    if not targetPin or ASSISTED_QUEST_PIN_TYPES[targetPin:GetPinType()] == nil then
+                                        targetPin = pin
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+        else
+            -- 2. If no active focused quest is selected, fall back to scanning any quest pin
+            -- First pass: look for any actively assisted pin that is not a wayshrine
             for pinKey, pin in pairs(activePins) do
                 if type(pin) == "table" or type(pin) == "userdata" then
                     if pin.GetPinType and pin.GetNormalizedPosition then
                         local pinType = pin:GetPinType()
-                        if pinType >= 10 and pinType <= 17 then
+                        if ASSISTED_QUEST_PIN_TYPES[pinType] then
                             if pin.IsAssisted and pin:IsAssisted() then
-                                targetPin = pin
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        -- Third pass: fall back to non-wayshrine generic quest pins
-        if not targetPin then
-            for pinKey, pin in pairs(activePins) do
-                if type(pin) == "table" or type(pin) == "userdata" then
-                    if pin.GetPinType and pin.GetNormalizedPosition then
-                        local pinType = pin:GetPinType()
-                        if pinType >= 10 and pinType <= 17 then
-                            if not IsWayshrinePin(pin, activePins) then
-                                targetPin = pin
-                                break
-                            end
-                        elseif pinType >= 19 and pinType <= 26 then
-                            if not IsWayshrinePin(pin, activePins) then
-                                if not targetPin or targetPin:GetPinType() > 26 then
+                                if not IsWayshrinePin(pin, activePins) then
                                     targetPin = pin
-                                end
-                            end
-                        elseif pinType >= 28 and pinType <= 35 then
-                            if not IsWayshrinePin(pin, activePins) then
-                                if not targetPin then
-                                    targetPin = pin
+                                    break
                                 end
                             end
                         end
                     end
                 end
             end
-        end
 
-        -- Final pass: fallback to original behavior (any quest pin) if nothing else is found
-        if not targetPin then
-            for pinKey, pin in pairs(activePins) do
-                if type(pin) == "table" or type(pin) == "userdata" then
-                    if pin.GetPinType and pin.GetNormalizedPosition then
-                        local pinType = pin:GetPinType()
-                        if pinType >= 10 and pinType <= 17 then
-                            targetPin = pin
-                            break
-                        elseif pinType >= 19 and pinType <= 26 then
-                            if not targetPin or targetPin:GetPinType() > 26 then
-                                targetPin = pin
+            -- Second pass: look for any assisted pin
+            if not targetPin then
+                for pinKey, pin in pairs(activePins) do
+                    if type(pin) == "table" or type(pin) == "userdata" then
+                        if pin.GetPinType and pin.GetNormalizedPosition then
+                            local pinType = pin:GetPinType()
+                            if ASSISTED_QUEST_PIN_TYPES[pinType] then
+                                if pin.IsAssisted and pin:IsAssisted() then
+                                    targetPin = pin
+                                    break
+                                end
                             end
-                        elseif pinType >= 28 and pinType <= 35 then
-                            if not targetPin then
-                                targetPin = pin
+                        end
+                    end
+                end
+            end
+
+            -- Third pass: fall back to non-wayshrine generic quest pins
+            if not targetPin then
+                for pinKey, pin in pairs(activePins) do
+                    if type(pin) == "table" or type(pin) == "userdata" then
+                        if pin.GetPinType and pin.GetNormalizedPosition then
+                            local pinType = pin:GetPinType()
+                            if ASSISTED_QUEST_PIN_TYPES[pinType] or NORMAL_QUEST_PIN_TYPES[pinType] then
+                                if not IsWayshrinePin(pin, activePins) then
+                                    if ASSISTED_QUEST_PIN_TYPES[pinType] then
+                                        targetPin = pin
+                                        break
+                                    else
+                                        if not targetPin or ASSISTED_QUEST_PIN_TYPES[targetPin:GetPinType()] == nil then
+                                            targetPin = pin
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- Final pass: fallback to any quest pin (including wayshrines)
+            if not targetPin then
+                for pinKey, pin in pairs(activePins) do
+                    if type(pin) == "table" or type(pin) == "userdata" then
+                        if pin.GetPinType and pin.GetNormalizedPosition then
+                            local pinType = pin:GetPinType()
+                            if ASSISTED_QUEST_PIN_TYPES[pinType] or NORMAL_QUEST_PIN_TYPES[pinType] then
+                                if ASSISTED_QUEST_PIN_TYPES[pinType] then
+                                    targetPin = pin
+                                    break
+                                else
+                                    if not targetPin or ASSISTED_QUEST_PIN_TYPES[targetPin:GetPinType()] == nil then
+                                        targetPin = pin
+                                    end
+                                end
                             end
                         end
                     end
@@ -760,16 +954,22 @@ local function UpdateMapQuestLine()
     end
 
     local pinX, pinY = 0, 0
-    local questIndex = nil
+    local questIndex = assistedQuestIndex
     if targetPin then
         pinX, pinY = targetPin:GetNormalizedPosition()
         MOverhaul.targetX = pinX
         MOverhaul.targetY = pinY
         MOverhaul.targetPinType = targetPin:GetPinType()
         if targetPin.GetQuestIndex then
-            questIndex = targetPin:GetQuestIndex()
+            local pIndex = targetPin:GetQuestIndex()
+            if pIndex and pIndex > 0 then
+                questIndex = pIndex
+            end
         elseif targetPin.m_QuestIndex then
-            questIndex = targetPin.m_QuestIndex
+            local pIndex = targetPin.m_QuestIndex
+            if pIndex and pIndex > 0 then
+                questIndex = pIndex
+            end
         end
     else
         MOverhaul.targetX = nil
@@ -940,9 +1140,14 @@ local function OnAddOnLoaded(event, addonName)
     if addonName == MOverhaul.name then
         EVENT_MANAGER:UnregisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED)
         
+        InitializeQuestPinTypes()
+        
         MOverhaul.db = ZO_SavedVars:NewAccountWide("MOverhaul_SavedVariables", 1, nil, defaults)
         CreateWaypointArrowControl()
         CreateQuestArrowControl()
+        
+        UpdateWaypointArrowFragmentVisibility()
+        UpdateQuestArrowFragmentVisibility()
         
         ZO_Dialogs_RegisterCustomDialog("M_OVERHAUL_CONFIRM", {
             title = {
@@ -1046,9 +1251,7 @@ local function OnAddOnLoaded(event, addonName)
                     getFunc = function() return MOverhaul.db.quest3DArrowEnabled end,
                     setFunc = function(value) 
                         MOverhaul.db.quest3DArrowEnabled = value 
-                        if MOverhaul_QuestArrow then
-                            MOverhaul_QuestArrow:SetHidden(not value)
-                        end
+                        UpdateQuestArrowFragmentVisibility()
                     end,
                     default = true,
                 },
@@ -1073,9 +1276,7 @@ local function OnAddOnLoaded(event, addonName)
                     getFunc = function() return MOverhaul.db.questWaypointArrowEnabled end,
                     setFunc = function(value) 
                         MOverhaul.db.questWaypointArrowEnabled = value 
-                        if MOverhaul_WaypointArrow then
-                            MOverhaul_WaypointArrow:SetHidden(not value)
-                        end
+                        UpdateWaypointArrowFragmentVisibility()
                     end,
                     default = true,
                 },
@@ -1144,16 +1345,11 @@ local function OnAddOnLoaded(event, addonName)
                     MOverhaul.db.quest3DArrowEnabled = not MOverhaul.db.quest3DArrowEnabled
                     KEYBIND_STRIP:UpdateKeybindButtonGroup(MOverhaul.gpsQuestKeybind)
                     PlaySound(SOUNDS.DEFAULT_CLICK)
+                    UpdateQuestArrowFragmentVisibility()
                     if MOverhaul.db.quest3DArrowEnabled then
                         d("[MOverhaul] Seta 2D da Quest ATIVADA.")
-                        if MOverhaul_QuestArrow then
-                            MOverhaul_QuestArrow:SetHidden(false)
-                        end
                     else
                         d("[MOverhaul] Seta 2D da Quest DESATIVADA.")
-                        if MOverhaul_QuestArrow then
-                            MOverhaul_QuestArrow:SetHidden(true)
-                        end
                     end
                 end,
                 visible = function()
