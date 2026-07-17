@@ -676,6 +676,7 @@ local function UpdateQuest2DArrow(pinX, pinY, questIndex)
                     end
 
                     local targetPinQuest = nil
+                    local minDistance = math.huge
                     if activePins then
                         for pinKey, pin in pairs(activePins) do
                             if type(pin) == "table" or type(pin) == "userdata" then
@@ -683,12 +684,23 @@ local function UpdateQuest2DArrow(pinX, pinY, questIndex)
                                     local pinType = pin:GetPinType()
                                     if ASSISTED_QUEST_PIN_TYPES[pinType] or NORMAL_QUEST_PIN_TYPES[pinType] then
                                         if not IsWayshrinePin(pin, activePins) then
-                                            if ASSISTED_QUEST_PIN_TYPES[pinType] then
-                                                targetPinQuest = pin
-                                                break
-                                            else
-                                                if not targetPinQuest or ASSISTED_QUEST_PIN_TYPES[targetPinQuest:GetPinType()] == nil then
+                                            local pinX, pinY = pin:GetNormalizedPosition()
+                                            if pinX and pinY then
+                                                local dist = (pinX - px)^2 + (pinY - py)^2
+                                                local isAssisted = ASSISTED_QUEST_PIN_TYPES[pinType] ~= nil
+                                                local targetIsAssisted = targetPinQuest and (ASSISTED_QUEST_PIN_TYPES[targetPinQuest:GetPinType()] ~= nil)
+                                                
+                                                if not targetPinQuest then
                                                     targetPinQuest = pin
+                                                    minDistance = dist
+                                                elseif isAssisted and not targetIsAssisted then
+                                                    targetPinQuest = pin
+                                                    minDistance = dist
+                                                elseif isAssisted == targetIsAssisted then
+                                                    if dist < minDistance then
+                                                        targetPinQuest = pin
+                                                        minDistance = dist
+                                                    end
                                                 end
                                             end
                                         end
@@ -881,6 +893,7 @@ local function UpdateMapQuestLine()
         if assistedQuestIndex and assistedQuestIndex > 0 then
             -- 1. If we have an active focused quest, ONLY scan for pins belonging to this quest
             -- First pass: look for actively assisted pin (green) that is not a wayshrine
+            local minDistance = math.huge
             for pinKey, pin in pairs(activePins) do
                 if type(pin) == "table" or type(pin) == "userdata" then
                     if pin.GetPinType and pin.GetNormalizedPosition then
@@ -890,8 +903,14 @@ local function UpdateMapQuestLine()
                             if ASSISTED_QUEST_PIN_TYPES[pinType] then
                                 if pin.IsAssisted and pin:IsAssisted() then
                                     if not IsWayshrinePin(pin, activePins) then
-                                        targetPin = pin
-                                        break
+                                        local pinX, pinY = pin:GetNormalizedPosition()
+                                        if pinX and pinY then
+                                            local dist = (pinX - playerX)^2 + (pinY - playerY)^2
+                                            if dist < minDistance then
+                                                minDistance = dist
+                                                targetPin = pin
+                                            end
+                                        end
                                     end
                                 end
                             end
@@ -902,6 +921,7 @@ local function UpdateMapQuestLine()
 
             -- Second pass: look for any assisted pin belonging to the focused quest
             if not targetPin then
+                minDistance = math.huge
                 for pinKey, pin in pairs(activePins) do
                     if type(pin) == "table" or type(pin) == "userdata" then
                         if pin.GetPinType and pin.GetNormalizedPosition then
@@ -910,8 +930,14 @@ local function UpdateMapQuestLine()
                                 local pinType = pin:GetPinType()
                                 if ASSISTED_QUEST_PIN_TYPES[pinType] then
                                     if pin.IsAssisted and pin:IsAssisted() then
-                                        targetPin = pin
-                                        break
+                                        local pinX, pinY = pin:GetNormalizedPosition()
+                                        if pinX and pinY then
+                                            local dist = (pinX - playerX)^2 + (pinY - playerY)^2
+                                            if dist < minDistance then
+                                                minDistance = dist
+                                                targetPin = pin
+                                            end
+                                        end
                                     end
                                 end
                             end
@@ -922,6 +948,7 @@ local function UpdateMapQuestLine()
 
             -- Third pass: look for any quest pin (including non-assisted and wayshrines) of the focused quest
             if not targetPin then
+                minDistance = math.huge
                 for pinKey, pin in pairs(activePins) do
                     if type(pin) == "table" or type(pin) == "userdata" then
                         if pin.GetPinType and pin.GetNormalizedPosition then
@@ -929,9 +956,24 @@ local function UpdateMapQuestLine()
                             if pinQuestIndex == assistedQuestIndex then
                                 local pinType = pin:GetPinType()
                                 if ASSISTED_QUEST_PIN_TYPES[pinType] or NORMAL_QUEST_PIN_TYPES[pinType] then
-                                    -- For the focused quest, accept even wayshrines if it's the only pin on the map
-                                    if not targetPin or ASSISTED_QUEST_PIN_TYPES[targetPin:GetPinType()] == nil then
-                                        targetPin = pin
+                                    local pinX, pinY = pin:GetNormalizedPosition()
+                                    if pinX and pinY then
+                                        local dist = (pinX - playerX)^2 + (pinY - playerY)^2
+                                        local isAssisted = ASSISTED_QUEST_PIN_TYPES[pinType] ~= nil
+                                        local targetIsAssisted = targetPin and (ASSISTED_QUEST_PIN_TYPES[targetPin:GetPinType()] ~= nil)
+                                        
+                                        if not targetPin then
+                                            targetPin = pin
+                                            minDistance = dist
+                                        elseif isAssisted and not targetIsAssisted then
+                                            targetPin = pin
+                                            minDistance = dist
+                                        elseif isAssisted == targetIsAssisted then
+                                            if dist < minDistance then
+                                                targetPin = pin
+                                                minDistance = dist
+                                            end
+                                        end
                                     end
                                 end
                             end
