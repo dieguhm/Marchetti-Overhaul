@@ -33,51 +33,16 @@ local function InitializeQuestPinTypes()
     ASSISTED_QUEST_PIN_TYPES = {}
     NORMAL_QUEST_PIN_TYPES = {}
     
-    local questKeys = {
-        "MAP_PIN_TYPE_QUEST_CONDITION",
-        "MAP_PIN_TYPE_QUEST_ENDING",
-        "MAP_PIN_TYPE_QUEST_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_QUEST_OPTIONAL_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_OPTIONAL_ENDING",
-        
-        "MAP_PIN_TYPE_QUEST_ZONE_STORY_CONDITION",
-        "MAP_PIN_TYPE_QUEST_ZONE_STORY_ENDING",
-        "MAP_PIN_TYPE_QUEST_ZONE_STORY_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_QUEST_ZONE_STORY_OPTIONAL_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_STORY_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_STORY_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_STORY_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_QUEST_ZONE_STORY_OPTIONAL_ENDING",
-
-        "MAP_PIN_TYPE_REPEATABLE_QUEST_CONDITION",
-        "MAP_PIN_TYPE_REPEATABLE_QUEST_ENDING",
-        "MAP_PIN_TYPE_REPEATABLE_QUEST_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_REPEATABLE_QUEST_OPTIONAL_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_OPTIONAL_ENDING",
-
-        "MAP_PIN_TYPE_REPEATABLE_QUEST_ZONE_STORY_CONDITION",
-        "MAP_PIN_TYPE_REPEATABLE_QUEST_ZONE_STORY_ENDING",
-        "MAP_PIN_TYPE_REPEATABLE_QUEST_ZONE_STORY_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_REPEATABLE_QUEST_ZONE_STORY_OPTIONAL_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ZONE_STORY_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ZONE_STORY_ENDING",
-        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ZONE_STORY_OPTIONAL_CONDITION",
-        "MAP_PIN_TYPE_ASSISTED_REPEATABLE_QUEST_ZONE_STORY_OPTIONAL_ENDING",
-    }
-    
-    for _, key in ipairs(questKeys) do
-        local value = _G[key]
-        if type(value) == "number" then
-            if string.find(key, "ASSISTED") then
-                ASSISTED_QUEST_PIN_TYPES[value] = true
-            else
-                NORMAL_QUEST_PIN_TYPES[value] = true
+    for key, value in pairs(_G) do
+        if type(key) == "string" and string.find(key, "^MAP_PIN_TYPE_") then
+            if string.find(key, "QUEST") or string.find(key, "FAVOR") then
+                if type(value) == "number" then
+                    if string.find(key, "ASSISTED") then
+                        ASSISTED_QUEST_PIN_TYPES[value] = true
+                    else
+                        NORMAL_QUEST_PIN_TYPES[value] = true
+                    end
+                end
             end
         end
     end
@@ -1609,6 +1574,21 @@ local function OnAddOnLoaded(event, addonName)
         InitializeQuestPinTypes()
         
         MOverhaul.db = ZO_SavedVars:NewAccountWide("MOverhaul_SavedVariables", 1, nil, defaults)
+        MOverhaul.db.questCoordsCache = {}
+
+        -- Limpar cache dinamicamente em mudanças de progresso ou conclusão de etapas de quests
+        EVENT_MANAGER:RegisterForEvent(MOverhaul.name .. "_QuestAdvanced", EVENT_QUEST_ADVANCED, function(eventCode, questIndex, questName)
+            if MOverhaul.db and MOverhaul.db.questCoordsCache then
+                local uniqueKey = string.format("%d_%s", questIndex, questName)
+                MOverhaul.db.questCoordsCache[uniqueKey] = nil
+            end
+        end)
+        EVENT_MANAGER:RegisterForEvent(MOverhaul.name .. "_QuestConditionChanged", EVENT_QUEST_CONDITION_COUNTER_CHANGED, function(eventCode, questIndex, questName)
+            if MOverhaul.db and MOverhaul.db.questCoordsCache then
+                local uniqueKey = string.format("%d_%s", questIndex, questName)
+                MOverhaul.db.questCoordsCache[uniqueKey] = nil
+            end
+        end)
         
 
         CreateWaypointArrowControl()
