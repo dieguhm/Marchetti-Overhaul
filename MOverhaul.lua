@@ -15,9 +15,16 @@ local defaults = {
     questArrowX = nil,
     questArrowY = nil,
     questCoordsCache = {},
+    poiMenuEnabled = true,
+    poiMenuLocked = false,
+    poiMenuX = nil,
+    poiMenuY = nil,
+    poiMenuCollapsed = false,
+    poiCache = {},
 }
 
 local overloadLabel = nil
+local CacheMapPOIs
 
 local ASSISTED_QUEST_PIN_TYPES = {}
 local NORMAL_QUEST_PIN_TYPES = {}
@@ -758,10 +765,25 @@ local function UpdateQuest2DArrow(pinX, pinY, questIndex)
     end
 end
 
+local lastPOICacheTime = 0
+
 local function UpdateMapQuestLine()
     local time = GetFrameTimeSeconds()
     if time - lastMapUpdate < MAP_UPDATE_INTERVAL then return end
     lastMapUpdate = time
+
+    -- Update POI Cache when map is visible
+    if ZO_WorldMap and not ZO_WorldMap:IsHidden() then
+        if time - lastPOICacheTime >= 1.0 then
+            lastPOICacheTime = time
+            if CacheMapPOIs then
+                local success, err = pcall(CacheMapPOIs)
+                if not success then
+                    d("[MOverhaul Cache Error] " .. tostring(err))
+                end
+            end
+        end
+    end
 
     local assistedQuestIndex = QUEST_JOURNAL_MANAGER and QUEST_JOURNAL_MANAGER:GetFocusedQuestIndex() or nil
     
@@ -1136,6 +1158,450 @@ local function OnPrimaryAction(slotControl)
     return false
 end
 
+local MOverhaul_POIFinderMenu = nil
+
+local POI_MENU_ITEMS = {
+    { category = "bank",        name = "Bank",              icon = "/esoui/art/icons/servicemappins/servicepin_bank.dds" },
+    { category = "stable",      name = "Stable",            icon = "/esoui/art/icons/servicemappins/servicepin_stable.dds" },
+    { category = "mages",       name = "Mages Guild",       icon = "/esoui/art/icons/servicemappins/servicepin_magesguild.dds" },
+    { category = "fighters",    name = "Fighters Guild",    icon = "/esoui/art/icons/servicemappins/servicepin_fightersguild.dds" },
+    { category = "guildtrader", name = "Guild Traders",     icon = "/esoui/art/icons/servicemappins/servicepin_guildkiosk.dds" },
+    { category = "wayshrine",   name = "Wayshrine",         icon = "/esoui/art/icons/poi/poi_wayshrine_complete.dds" },
+}
+
+local function GetPinTexture(pin)
+    if not pin then return "" end
+    
+    -- 1. Try to get texture directly from the control or its children
+    if pin.GetControl then
+        local control = pin:GetControl()
+        if control then
+            -- Try Background child (standard for native map pins)
+            local bg = control.GetNamedChild and control:GetNamedChild("Background")
+            if bg and bg.GetTextureFileName then
+                local texture = bg:GetTextureFileName()
+                if texture and texture ~= "" then
+                    return texture:lower()
+                end
+            end
+            
+            -- Try Icon child
+            local icon = control.GetNamedChild and control:GetNamedChild("Icon")
+            if icon and icon.GetTextureFileName then
+                local texture = icon:GetTextureFileName()
+                if texture and texture ~= "" then
+                    return texture:lower()
+                end
+            end
+            
+            -- Try control directly
+            if control.GetTextureFileName then
+                local texture = control:GetTextureFileName()
+                if texture and texture ~= "" then
+                    return texture:lower()
+                end
+            end
+        end
+    end
+
+    -- 2. Fallback to PIN_LAYOUTS via ZO_MapPin or pinManager
+    local pinType = pin.GetPinType and pin:GetPinType()
+    if pinType then
+        local layouts = (ZO_MapPin and ZO_MapPin.PIN_LAYOUTS) or (ZO_WorldMap_GetPinManager and ZO_WorldMap_GetPinManager().m_pinLayouts)
+        local layout = layouts and layouts[pinType]
+        if layout then
+            local texture = layout.texture
+            if type(texture) == "function" then
+                local success, result = pcall(texture, pin)
+                if success and type(result) == "string" then
+                    return result:lower()
+                end
+            elseif type(texture) == "string" then
+                return texture:lower()
+            end
+        end
+    end
+
+    return ""
+end
+
+local function GetPinName(pin)
+    if not pin then return "" end
+    
+    -- 1. Hook ZO_Tooltip_AddLine and ZO_Tooltip_AddHeaderLine to capture text dynamically
+    local capturedLines = {}
+    local oldAddLine = _G["ZO_Tooltip_AddLine"]
+    local oldAddHeader = _G["ZO_Tooltip_AddHeaderLine"]
+    
+    -- Use ComparativeTooltip1 (which is offscreen/hidden) to prevent screen flickering
+    local mapTooltip = _G["ComparativeTooltip1"] or _G["ItemTooltip"] or _G["InformationTooltip"]
+    
+    if oldAddLine then
+        _G["ZO_Tooltip_AddLine"] = function(tooltipControl, text, ...)
+            if text and text ~= "" then
+                table.insert(capturedLines, tostring(text))
+            end
+            if tooltipControl == mapTooltip then
+                return
+            end
+            return oldAddLine(tooltipControl, text, ...)
+        end
+    end
+    
+    if oldAddHeader then
+        _G["ZO_Tooltip_AddHeaderLine"] = function(tooltipControl, text, ...)
+            if text and text ~= "" then
+                table.insert(capturedLines, tostring(text))
+            end
+            if tooltipControl == mapTooltip then
+                return
+            end
+            return oldAddHeader(tooltipControl, text, ...)
+        end
+    end
+    
+    -- Invoke SetTooltip on the offscreen tooltip control
+    if mapTooltip and pin.SetTooltip then
+        pcall(pin.SetTooltip, pin, mapTooltip)
+    end
+    
+    -- Restore the hooks immediately!
+    if oldAddLine then _G["ZO_Tooltip_AddLine"] = oldAddLine end
+    if oldAddHeader then _G["ZO_Tooltip_AddHeaderLine"] = oldAddHeader end
+    
+    -- If we captured text, join and return
+    if #capturedLines > 0 then
+        return table.concat(capturedLines, " "):lower()
+    end
+    
+    -- 2. Fallback to standard tag checks if tooltip was empty
+    local pinType2, pinTag
+    if pin.GetPinTypeAndTag then
+        pinType2, pinTag = pin:GetPinTypeAndTag()
+    end
+    
+    if type(pinTag) == "string" then
+        return pinTag:lower()
+    elseif type(pinTag) == "table" or type(pinTag) == "userdata" then
+        if pinTag.GetName then
+            local success, name = pcall(pinTag.GetName, pinTag)
+            if success and type(name) == "string" and name ~= "" then
+                return name:lower()
+            end
+        end
+        if pinTag.GetTooltipText then
+            local success, text = pcall(pinTag.GetTooltipText, pinTag)
+            if success and type(text) == "string" and text ~= "" then
+                return text:lower()
+            end
+        end
+        if pinTag.name then return tostring(pinTag.name):lower() end
+        if pinTag.title then return tostring(pinTag.title):lower() end
+    end
+    
+    return ""
+end
+
+local function MatchPinCategory(category, texture, name, pinType)
+    texture = texture or ""
+    name = name or ""
+    
+    if category == "bank" then
+        if _G.MAP_PIN_TYPE_BANK and pinType == _G.MAP_PIN_TYPE_BANK then return true end
+        return string.find(texture, "bank") or string.find(name, "bank") or string.find(name, "banco")
+    elseif category == "stable" then
+        if _G.MAP_PIN_TYPE_STABLE and pinType == _G.MAP_PIN_TYPE_STABLE then return true end
+        return string.find(texture, "stable") or string.find(texture, "horse") or string.find(name, "stable") or string.find(name, "estabulo") or string.find(name, "estábulo")
+    elseif category == "mages" then
+        return string.find(texture, "magesguild") or string.find(texture, "mage") or string.find(name, "mages guild") or string.find(name, "guilda dos magos") or string.find(name, "guilda de magos") or string.find(name, "magos")
+    elseif category == "fighters" then
+        return string.find(texture, "fightersguild") or string.find(texture, "fighter") or string.find(name, "fighters guild") or string.find(name, "guilda dos guerreiros") or string.find(name, "guilda de guerreiros") or string.find(name, "guerreiros") or string.find(name, "combatentes")
+    elseif category == "guildtrader" then
+        return string.find(texture, "trader") or string.find(texture, "kiosk") or string.find(name, "guild trader") or string.find(name, "guild kiosk") or string.find(name, "quiosque de guilda") or string.find(name, "comerciante de guilda") or string.find(name, "mercador de guilda") or string.find(name, "quiosque") or string.find(name, "trader") or string.find(name, "kiosk")
+    elseif category == "wayshrine" then
+        if (_G.MAP_PIN_TYPE_FAST_TRAVEL_WAYSHRINE and pinType == _G.MAP_PIN_TYPE_FAST_TRAVEL_WAYSHRINE) or
+           (_G.MAP_PIN_TYPE_FAST_TRAVEL_WAYSHRINE_CURRENT and pinType == _G.MAP_PIN_TYPE_FAST_TRAVEL_WAYSHRINE_CURRENT) then
+            return true
+        end
+        return string.find(texture, "wayshrine") or string.find(texture, "fasttravel") or string.find(name, "wayshrine") or string.find(name, "santuario") or string.find(name, "santuário")
+    end
+    
+    return false
+end
+
+CacheMapPOIs = function()
+    local pinManager = ZO_WorldMap_GetPinManager()
+    if not pinManager then return end
+
+    local activePins = nil
+    if pinManager.GetActiveObjects then
+        activePins = pinManager:GetActiveObjects()
+    elseif pinManager.m_Active then
+        activePins = pinManager.m_Active
+    end
+
+    if not activePins then return end
+
+    local mapKey = GetMapTileTexture()
+    if not mapKey or mapKey == "" then return end
+    mapKey = mapKey:lower()
+
+    local db = MOverhaul.db
+    if not db then return end
+    db.poiCache = db.poiCache or {}
+    db.poiCache[mapKey] = {}
+
+    local currentCache = db.poiCache[mapKey]
+    local cachedCount = 0
+    local totalScanned = 0
+
+    for pinKey, pin in pairs(activePins) do
+        if type(pin) == "table" or type(pin) == "userdata" then
+            if pin.GetPinType and pin.GetNormalizedPosition then
+                local x, y = pin:GetNormalizedPosition()
+                if x and x > 0 and y and y > 0 then
+                    totalScanned = totalScanned + 1
+                    local texture = GetPinTexture(pin)
+                    local name = GetPinName(pin)
+                    local pinType = pin:GetPinType()
+                    local categories = { "bank", "stable", "mages", "fighters", "guildtrader", "wayshrine" }
+                    for _, category in ipairs(categories) do
+                        if MatchPinCategory(category, texture, name, pinType) then
+                            currentCache[category] = currentCache[category] or {}
+                            
+                            local exists = false
+                            for _, cached in ipairs(currentCache[category]) do
+                                if math.abs(cached.x - x) < 0.0001 and math.abs(cached.y - y) < 0.0001 then
+                                    exists = true
+                                    break
+                                end
+                            end
+                            
+                            if not exists then
+                                table.insert(currentCache[category], { x = x, y = y, name = name })
+                                cachedCount = cachedCount + 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function MOverhaul.SetWaypointToNearest(category)
+    local mapKey = GetMapTileTexture()
+    if not mapKey or mapKey == "" then
+        d("[MOverhaul] Nao foi possivel obter o mapa atual.")
+        return
+    end
+    mapKey = mapKey:lower()
+
+    local db = MOverhaul.db
+    if not db then return end
+
+    -- Toggle off if same category is clicked again
+    if MOverhaul.lastActiveWaypointCategory == category then
+        pcall(RemovePlayerWaypoint)
+        MOverhaul.lastActiveWaypointCategory = nil
+        d("[MOverhaul] Marcador removido.")
+        PlaySound(SOUNDS.MAP_PING_REMOVE or SOUNDS.DEFAULT_CLICK)
+        return
+    end
+
+    db.poiCache = db.poiCache or {}
+    local currentCache = db.poiCache[mapKey]
+
+    local foundLocations = {}
+    if currentCache and currentCache[category] then
+        foundLocations = currentCache[category]
+    end
+
+    if #foundLocations == 0 then
+        if ZO_WorldMap and not ZO_WorldMap:IsHidden() then
+            CacheMapPOIs()
+            if currentCache and currentCache[category] then
+                foundLocations = currentCache[category]
+            end
+        end
+    end
+
+    if #foundLocations == 0 then
+        d("[MOverhaul] Nenhum POI do tipo '" .. category .. "' catalogado para este mapa.")
+        d("[MOverhaul] Abra o mapa (M) uma vez nesta cidade para carregar os POIs.")
+        return
+    end
+
+    local px, py = GetMapPlayerPosition("player")
+    if not px or px == 0 then
+        d("[MOverhaul] Nao foi possivel obter a posicao do jogador.")
+        return
+    end
+
+    local nearestPOI = nil
+    local minDistance = math.huge
+
+    for _, data in ipairs(foundLocations) do
+        local dist = (data.x - px)^2 + (data.y - py)^2
+        if dist < minDistance then
+            minDistance = dist
+            nearestPOI = data
+        end
+    end
+
+    if nearestPOI then
+        local wpPinType = MAP_PIN_TYPE_PLAYER_WAYPOINT or 1
+        local mapTypeLoc = MAP_TYPE_LOCATION_CENTERED or 1
+        
+        pcall(RemovePlayerWaypoint)
+        PingMap(wpPinType, mapTypeLoc, nearestPOI.x, nearestPOI.y)
+        
+        MOverhaul.lastActiveWaypointCategory = category
+        
+        local pinName = nearestPOI.name or ""
+        if pinName == "" then
+            pinName = category:upper()
+        else
+            pinName = pinName:gsub("^%l", string.upper)
+        end
+        
+        d("[MOverhaul] Marcador definido para: " .. pinName)
+        PlaySound(SOUNDS.MAP_PING)
+    end
+end
+
+local function CreateMenuButton(parent, index, item)
+    local btn = WINDOW_MANAGER:CreateControl("MOverhaul_POIButton_" .. item.category, parent, CT_CONTROL)
+    btn:SetDimensions(32, 32)
+    btn:SetMouseEnabled(true)
+    btn:SetDrawLevel(2)
+    
+    local bg = WINDOW_MANAGER:CreateControl(nil, btn, CT_BACKDROP)
+    bg:SetAnchorFill()
+    bg:SetCenterColor(1, 1, 1, 0.05)
+    bg:SetEdgeColor(0, 0, 0, 0)
+    bg:SetEdgeTexture("", 8, 1, 1)
+    bg:SetDrawLevel(1)
+    
+    local icon = WINDOW_MANAGER:CreateControl(nil, btn, CT_TEXTURE)
+    icon:SetAnchor(CENTER, btn, CENTER, 0, 0)
+    icon:SetDimensions(26, 26)
+    icon:SetTexture(item.icon)
+    icon:SetColor(1, 1, 1, 1)
+    icon:SetDrawLevel(2)
+    
+    btn:SetHandler("OnMouseEnter", function(self)
+        bg:SetCenterColor(1, 1, 1, 0.2)
+        ZO_Tooltips_ShowTextTooltip(self, TOP, item.name)
+    end)
+    
+    btn:SetHandler("OnMouseExit", function(self)
+        bg:SetCenterColor(1, 1, 1, 0.05)
+        ZO_Tooltips_HideTextTooltip()
+    end)
+    
+    btn:SetHandler("OnMouseDown", function(self, button)
+        if button == MOUSE_BUTTON_INDEX_LEFT then
+            PlaySound(SOUNDS.DEFAULT_CLICK)
+            MOverhaul.SetWaypointToNearest(item.category)
+        end
+    end)
+    
+    return btn
+end
+
+local function CreatePOIFinderMenu()
+    if MOverhaul_POIFinderMenu then return end
+
+    local db = MOverhaul.db
+
+    MOverhaul_POIFinderMenu = WINDOW_MANAGER:CreateTopLevelWindow("MOverhaul_POIFinderMenu")
+    MOverhaul_POIFinderMenu:SetDimensions(226, 40)
+
+    if db.poiMenuX and db.poiMenuY then
+        MOverhaul_POIFinderMenu:ClearAnchors()
+        MOverhaul_POIFinderMenu:SetAnchor(TOPLEFT, GuiRoot, TOPLEFT, db.poiMenuX, db.poiMenuY)
+    else
+        MOverhaul_POIFinderMenu:ClearAnchors()
+        MOverhaul_POIFinderMenu:SetAnchor(RIGHT, GuiRoot, RIGHT, -50, 0)
+    end
+
+    MOverhaul_POIFinderMenu:SetMovable(not db.poiMenuLocked)
+    MOverhaul_POIFinderMenu:SetMouseEnabled(true)
+    MOverhaul_POIFinderMenu:SetClampedToScreen(true)
+
+    local bg = WINDOW_MANAGER:CreateControl("MOverhaul_POIFinderMenuBG", MOverhaul_POIFinderMenu, CT_BACKDROP)
+    bg:SetAnchorFill()
+    bg:SetCenterColor(0, 0, 0, 0.4)
+    bg:SetEdgeColor(0.2, 0.2, 0.2, 0.4)
+    bg:SetEdgeTexture("", 8, 1, 1)
+    bg:SetDrawLevel(1)
+
+    -- Create dedicated Drag Handle on the left
+    local dragHandle = WINDOW_MANAGER:CreateControl("MOverhaul_POIFinderMenuDrag", MOverhaul_POIFinderMenu, CT_CONTROL)
+    dragHandle:SetDimensions(12, 32)
+    dragHandle:SetAnchor(LEFT, MOverhaul_POIFinderMenu, LEFT, 4, 0)
+    dragHandle:SetMouseEnabled(true)
+    dragHandle:SetDrawLevel(2)
+
+    local dragBg = WINDOW_MANAGER:CreateControl(nil, dragHandle, CT_BACKDROP)
+    dragBg:SetAnchorFill()
+    dragBg:SetCenterColor(1, 1, 1, 0.05)
+    dragBg:SetEdgeColor(0, 0, 0, 0)
+    dragBg:SetDrawLevel(1)
+
+    local dragText = WINDOW_MANAGER:CreateControl(nil, dragHandle, CT_LABEL)
+    dragText:SetAnchor(CENTER, dragHandle, CENTER, 0, 0)
+    dragText:SetFont("$(BOLD_FONT)|14|soft-shadow-thin")
+    dragText:SetColor(0.6, 0.6, 0.6, 1)
+    dragText:SetText("⋮")
+
+    dragHandle:SetHandler("OnMouseEnter", function(self)
+        dragBg:SetCenterColor(1, 1, 1, 0.2)
+        dragText:SetColor(1, 1, 0, 1)
+        ZO_Tooltips_ShowTextTooltip(self, TOP, "Arrastar POI Finder")
+    end)
+
+    dragHandle:SetHandler("OnMouseExit", function(self)
+        dragBg:SetCenterColor(1, 1, 1, 0.05)
+        dragText:SetColor(0.6, 0.6, 0.6, 1)
+        ZO_Tooltips_HideTextTooltip()
+    end)
+
+    local isDragging = false
+    dragHandle:SetHandler("OnMouseDown", function(self, button)
+        if button == MOUSE_BUTTON_INDEX_LEFT and not db.poiMenuLocked then
+            MOverhaul_POIFinderMenu:StartMoving()
+            isDragging = true
+        end
+    end)
+
+    dragHandle:SetHandler("OnMouseUp", function(self, button)
+        if isDragging then
+            MOverhaul_POIFinderMenu:StopMovingOrResizing()
+            db.poiMenuX = MOverhaul_POIFinderMenu:GetLeft()
+            db.poiMenuY = MOverhaul_POIFinderMenu:GetTop()
+            isDragging = false
+        end
+    end)
+
+    -- Anchor buttons horizontally after the drag handle
+    local startX = 20
+    for i, item in ipairs(POI_MENU_ITEMS) do
+        local btn = CreateMenuButton(MOverhaul_POIFinderMenu, i, item)
+        btn:ClearAnchors()
+        btn:SetAnchor(LEFT, MOverhaul_POIFinderMenu, LEFT, startX, 0)
+        startX = startX + 32 + 2
+    end
+
+    local menuFragment = ZO_HUDFadeSceneFragment:New(MOverhaul_POIFinderMenu)
+    if db.poiMenuEnabled then
+        HUD_SCENE:AddFragment(menuFragment)
+        HUD_UI_SCENE:AddFragment(menuFragment)
+    end
+    MOverhaul_POIFinderMenu.fragment = menuFragment
+end
+
 local function OnAddOnLoaded(event, addonName)
     if addonName == MOverhaul.name then
         EVENT_MANAGER:UnregisterForEvent(MOverhaul.name, EVENT_ADD_ON_LOADED)
@@ -1143,8 +1609,14 @@ local function OnAddOnLoaded(event, addonName)
         InitializeQuestPinTypes()
         
         MOverhaul.db = ZO_SavedVars:NewAccountWide("MOverhaul_SavedVariables", 1, nil, defaults)
+        
+
         CreateWaypointArrowControl()
         CreateQuestArrowControl()
+        
+        if MOverhaul.db.poiMenuEnabled then
+            CreatePOIFinderMenu()
+        end
         
         UpdateWaypointArrowFragmentVisibility()
         UpdateQuestArrowFragmentVisibility()
@@ -1290,6 +1762,43 @@ local function OnAddOnLoaded(event, addonName)
                         if MOverhaul_WaypointArrow then
                             MOverhaul_WaypointArrow:SetMovable(not value)
                             MOverhaul_WaypointArrow:SetMouseEnabled(not value)
+                        end
+                    end,
+                    default = false,
+                },
+                {
+                    type = "checkbox",
+                    name = "Menu POI Finder (Modulo)",
+                    tooltip = "Habilita ou desabilita o menu do buscador de POIs na tela.",
+                    getFunc = function() return MOverhaul.db.poiMenuEnabled end,
+                    setFunc = function(value) 
+                        MOverhaul.db.poiMenuEnabled = value 
+                        if value then
+                            if not MOverhaul_POIFinderMenu then
+                                CreatePOIFinderMenu()
+                            end
+                            if MOverhaul_POIFinderMenu and MOverhaul_POIFinderMenu.fragment then
+                                HUD_SCENE:AddFragment(MOverhaul_POIFinderMenu.fragment)
+                                HUD_UI_SCENE:AddFragment(MOverhaul_POIFinderMenu.fragment)
+                            end
+                        else
+                            if MOverhaul_POIFinderMenu and MOverhaul_POIFinderMenu.fragment then
+                                HUD_SCENE:RemoveFragment(MOverhaul_POIFinderMenu.fragment)
+                                HUD_UI_SCENE:RemoveFragment(MOverhaul_POIFinderMenu.fragment)
+                            end
+                        end
+                    end,
+                    default = true,
+                },
+                {
+                    type = "checkbox",
+                    name = "Bloquear Menu POI",
+                    tooltip = "Bloqueia a movimentacao do menu do buscador de POIs na tela para evitar arrastes acidentais.",
+                    getFunc = function() return MOverhaul.db.poiMenuLocked end,
+                    setFunc = function(value) 
+                        MOverhaul.db.poiMenuLocked = value 
+                        if MOverhaul_POIFinderMenu then
+                            MOverhaul_POIFinderMenu:SetMovable(not value)
                         end
                     end,
                     default = false,
