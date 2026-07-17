@@ -1208,12 +1208,12 @@ end
 local MOverhaul_POIFinderMenu = nil
 
 local POI_MENU_ITEMS = {
-    { category = "bank",        name = "Bank",              icon = "/esoui/art/icons/servicemappins/servicepin_bank.dds" },
-    { category = "stable",      name = "Stable",            icon = "/esoui/art/icons/servicemappins/servicepin_stable.dds" },
-    { category = "mages",       name = "Mages Guild",       icon = "/esoui/art/icons/servicemappins/servicepin_magesguild.dds" },
-    { category = "fighters",    name = "Fighters Guild",    icon = "/esoui/art/icons/servicemappins/servicepin_fightersguild.dds" },
-    { category = "guildtrader", name = "Guild Traders",     icon = "/esoui/art/icons/servicemappins/servicepin_guildkiosk.dds" },
-    { category = "wayshrine",   name = "Wayshrine",         icon = "/esoui/art/icons/poi/poi_wayshrine_complete.dds" },
+    { category = "bank",        name = "Bank",              icon = "esoui/art/icons/servicemappins/servicepin_bank.dds" },
+    { category = "stable",      name = "Stable",            icon = "esoui/art/icons/servicemappins/servicepin_stable.dds" },
+    { category = "mages",       name = "Mages Guild",       icon = "esoui/art/icons/servicemappins/servicepin_magesguild.dds" },
+    { category = "fighters",    name = "Fighters Guild",    icon = "esoui/art/icons/servicemappins/servicepin_fightersguild.dds" },
+    { category = "guildtrader", name = "Guild Traders",     icon = "esoui/art/icons/servicemappins/servicepin_guildkiosk.dds" },
+    { category = "wayshrine",   name = "Wayshrine",         icon = "esoui/art/icons/poi/poi_wayshrine_complete.dds" },
 }
 
 local function GetPinTexture(pin)
